@@ -150,7 +150,7 @@ async def handle_user_message(message: types.Message):
 
         text_result = "\n".join(lines)
         await message.answer(
-            f"<b>Результаты:</b>\n{text_result}"
+            f"<b>Результаты:</b>\n{text_result}\n"
             "Мы оставляем эту функцию бесплатной для вас!\n"
             "Взамен просим вас лишь подписаться на наш <a href='https://t.me/+kajuSJADWcBjZjli'>новостной канал</a>"
             , parse_mode="HTML")
