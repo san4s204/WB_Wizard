@@ -3,7 +3,7 @@ from aiogram import types
 from aiogram.types import CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardMarkup
 from db.database import SessionLocal
-from db.models import User, UserWarehouse, AcceptanceCoefficient
+from db.models import User, UserWarehouse, AcceptanceCoefficient, UserBoxType
 from collections import defaultdict
 from aiogram import Dispatcher
 from core.sub import get_user_role
@@ -29,6 +29,29 @@ def get_all_warehouses(token_id: int) -> list[tuple]:
     return [(r[0], r[1]) for r in rows if r[0] and r[1]]
 
 async def callback_track_free_accept_menu(query: CallbackQuery):
+    """
+    Вызывается при нажатии на кнопку «Трекинг бесплатной приёмки» в разделе настроек.
+    Показывает подменю: [ СКЛАДЫ | ТИП КОРОБА | Назад ] 
+    """
+
+    # Можно удалить user_pages[user_id], если хотите заново.
+    text = (
+        "<b>Трекинг бесплатной приёмки</b>\n\n"
+        "Выберите, что хотите настроить:\n"
+        "1. Склад 🆓🚚\n"
+        "2. Тип короба 📦"
+    )
+
+    kb = InlineKeyboardBuilder()
+    kb.button(text="Склады🆓🚚", callback_data="track_free_accept_coef")
+    kb.button(text="Тип короба📦", callback_data="track_free_accept_box")
+    kb.button(text="⬅️Назад", callback_data="settings")
+    kb.adjust(1)
+
+    await query.message.edit_text(text, parse_mode="HTML", reply_markup=kb.as_markup())
+    await query.answer()
+
+async def callback_track_free_accept_coef(query: CallbackQuery):
     """
     Показывает первую страницу складов (или текущую, если уже установлена).
     """
@@ -86,7 +109,7 @@ async def callback_track_free_accept_menu(query: CallbackQuery):
     nav_builder.adjust(2)  # две кнопки в ряд (если обе есть)
 
     # Кнопка "Назад" (в меню)
-    nav_builder.button(text="Выход", callback_data="cabinet")
+    nav_builder.button(text="⬅️Назад", callback_data="track_free_accept_menu")
     nav_builder.adjust(1)
 
     # -- «Склеиваем» две разметки
@@ -211,3 +234,124 @@ async def callback_del_wh(query: CallbackQuery):
 
     # Обновим меню
     await callback_track_free_accept_menu(query)
+
+async def callback_track_free_accept_box(query: CallbackQuery):
+    """
+    Показывает все доступные типы box_type (напр. берем distinct из acceptance_coefficients),
+    и позволяет подписаться/отписаться (аналогично складам).
+    """
+    user_id = query.from_user.id
+    session = SessionLocal()
+    db_user = session.query(User).filter_by(telegram_id=str(user_id)).first()
+    if not db_user:
+        session.close()
+        await query.answer("Пользователь не найден.")
+        return
+
+    token_id = db_user.token_id
+    if not token_id:
+        session.close()
+        await query.message.edit_text("Не привязан токен!")
+        await query.answer()
+        return
+
+    # 1) Достаём все box_type_name из acceptance_coefficients,
+    #    где token_id = db_user.token_id, group by distinct
+    rows = (session.query(AcceptanceCoefficient.box_type_name)
+            .filter_by(token_id=token_id)
+            .distinct()
+            .all())
+    # rows => [(box_type1,), (box_type2,)...]
+    box_types = [r[0] for r in rows if r[0]]
+
+    if not box_types:
+        session.close()
+        await query.message.edit_text("Список типов коробов пуст или не найден.")
+        await query.answer()
+        return
+
+    # 2) Ищем, на какие box_type уже подписан пользователь
+    user_boxes = session.query(UserBoxType).filter_by(user_id=db_user.id).all()
+    subscribed_types = {x.box_type_name for x in user_boxes}
+
+    # 3) Формируем кнопки
+    kb_builder = InlineKeyboardBuilder()
+    for bt in box_types:
+        subscribed = (bt in subscribed_types)
+        if subscribed:
+            kb_builder.button(text=f"✅ {bt}", callback_data=f"del_box_{bt}")
+        else:
+            kb_builder.button(text=f"🚫 {bt}", callback_data=f"add_box_{bt}")
+
+    kb_builder.adjust(2)
+
+    # Кнопка "Назад"
+    kb_builder.button(text="Назад", callback_data="track_free_accept_menu")
+    kb_builder.adjust(1)
+
+    text = f"<b>Трекинг бесплатной приёмки</b>\n\n" \
+           f"Подпишитесь ✅ на типы коробов, чтобы получить уведомление\n" \
+           f"о бесплатной приёмке по ним.\n\n" \
+           f"Всего типов: {len(box_types)}, подписано: {len(subscribed_types)}\n"
+    session.close()
+
+    await query.message.edit_text(text, parse_mode="HTML", reply_markup=kb_builder.as_markup())
+    await query.answer()
+
+async def callback_add_box(query: types.CallbackQuery):
+    """
+    Callback вида add_box_someName
+    """
+    data = query.data  # "add_box_..."
+    _, _, box_type = data.partition("add_box_")
+    box_type = box_type.strip()
+
+    session = SessionLocal()
+    db_user = session.query(User).filter_by(telegram_id=str(query.from_user.id)).first()
+    if not db_user:
+        session.close()
+        await query.answer("Пользователь не найден.")
+        return
+
+    # Проверяем, есть ли уже
+    exists = session.query(UserBoxType).filter_by(user_id=db_user.id, box_type_name=box_type).first()
+    if exists:
+        session.close()
+        await query.answer("Уже подписано.")
+        return
+
+    new_rec = UserBoxType(user_id=db_user.id, box_type_name=box_type)
+    session.add(new_rec)
+    session.commit()
+    session.close()
+
+    await query.answer(f"Box {box_type} подписан!")
+    # Возвращаемся в меню
+    await callback_track_free_accept_box(query)
+
+async def callback_del_box(query: types.CallbackQuery):
+    """
+    Callback вида del_box_someName
+    """
+    data = query.data
+    _, _, box_type = data.partition("del_box_")
+    box_type = box_type.strip()
+
+    session = SessionLocal()
+    db_user = session.query(User).filter_by(telegram_id=str(query.from_user.id)).first()
+    if not db_user:
+        session.close()
+        await query.answer("Пользователь не найден.")
+        return
+
+    record = session.query(UserBoxType).filter_by(user_id=db_user.id, box_type_name=box_type).first()
+    if record:
+        session.delete(record)
+        session.commit()
+        await query.answer("Box удалён.")
+    else:
+        await query.answer("Нету такой подписки.")
+    session.close()
+
+    # Возвращаемся
+    await callback_track_free_accept_box(query)

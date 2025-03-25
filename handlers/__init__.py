@@ -8,6 +8,7 @@ from .callback_handlers import register_callback_handlers
 from .settings_handler import register_settings_handlers
 from .positions_hanlder import register_positions_handlers
 from .tariffs_handler import register_tariffs_handler
+from .find_positions_handler import register_find_position_handlers
 # ... и т.д.
 
 def register_all_handlers(dp):
@@ -21,4 +22,5 @@ def register_all_handlers(dp):
     register_settings_handlers(dp)
     register_positions_handlers(dp)
     register_tariffs_handler(dp)
+    register_find_position_handlers(dp)
     # регистрируем все остальные

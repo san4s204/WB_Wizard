@@ -36,6 +36,20 @@ class UserWarehouse(Base):
     # relationship для удобства, если нужно
     user = relationship("User", backref="tracked_warehouses")
 
+class UserBoxType(Base):
+    __tablename__ = 'user_box_types'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    box_type_name = Column(String(50), nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'box_type_name', name='uq_user_box_type'),
+    )
+
+    user = relationship("User", backref="tracked_box_types")
+
 class Token(Base):
     __tablename__ = 'tokens'
 
@@ -196,8 +210,8 @@ class DestCity(Base):
     __tablename__ = "dest_city"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    city = Column(String(255), nullable=False)
-    dest = Column(BigInteger, nullable=False)
+    city = Column(String(255), nullable=False) # Название города
+    dest = Column(BigInteger, nullable=False) # ID города 
 
 class ProductPositions(Base):
     __tablename__ = "product_positions"

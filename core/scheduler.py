@@ -6,6 +6,7 @@ from core.fetch_report_details import save_report_details
 from utils.notifications import notify_new_orders, notify_new_sales, send_daily_reports_to_all_users, notify_free_incomes, notify_free_acceptance, notify_subscription_expiring
 from core.stocks_tracking import check_stocks  
 from core.incomes_tracking import check_new_incomes
+from core.products_service import fill_new_products_from_orders
 from core.parse_popular_req_products import update_product_positions_chunked_async
 from core.fetch_pop_req import fetch_popular_requests
 from core.coefficient_tracking import check_acceptance_coeffs
@@ -17,6 +18,7 @@ def start_scheduler(bot):
 
     # Отправка ежедневных отчётов всем пользователям (в 9:00)
     scheduler.add_job(send_daily_reports_to_all_users, 'cron', hour=0, minute = 0, args=[bot])
+    scheduler.add_job(fill_new_products_from_orders, 'cron', hour=1)  # раз в день в 3:00
     scheduler.add_job(notify_subscription_expiring, 'cron', hour=10, minute=0, args=[bot])
     # Проверка заказов и продаж каждые 2 минуты
     scheduler.add_job(run_check_and_notify_all, 'interval', minutes=2, args=[bot])
@@ -52,9 +54,13 @@ async def run_check_and_notify_all(bot):
     """ Проверка детальной информации по заказам и продажам """
     await save_report_details()
 
+    """Проверка новых заказов"""
+
     new_orders = await check_new_orders()
     if new_orders:
         await notify_new_orders(bot, new_orders)
+
+    """Проверка новых выкупов"""
 
     new_sales = await check_new_sales()
     if new_sales:

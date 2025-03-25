@@ -4,11 +4,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from db.database import SessionLocal
 from aiogram.filters import Command
 from db.models import User
-from handlers.free_accept_handler import callback_track_free_accept_menu
-from handlers.free_accept_handler import callback_track_free_accept_prev
-from handlers.free_accept_handler import callback_track_free_accept_next
-from handlers.free_accept_handler import callback_add_wh
-from handlers.free_accept_handler import callback_del_wh
+from handlers.free_accept_handler import callback_track_free_accept_menu, callback_track_free_accept_prev, callback_track_free_accept_next, callback_add_wh, callback_del_wh, callback_track_free_accept_coef, callback_add_box, callback_del_box, callback_track_free_accept_box, callback_track_free_accept_coef
 
 from aiogram import Dispatcher
 
@@ -36,9 +32,9 @@ async def cmd_settings_command(message: types.Message):
 async def callback_settings(query: types.CallbackQuery):
     kb = InlineKeyboardBuilder()
     kb.button(text="Оповещения🔔", callback_data="notif_menu")
-    kb.button(text="Позиции🛍", callback_data="pos_menu")
+    # kb.button(text="Позиции🛍", callback_data="pos_menu")
     kb.button(text="Трекинг бесплатной приёмки 🆓🚚", callback_data="track_free_accept_menu")
-    kb.button(text="Назад 🔙", callback_data="cabinet")  # или "cabinet"
+    kb.button(text="⬅️Назад", callback_data="cabinet")  # или "cabinet"
     kb.adjust(1)
 
     await query.message.edit_text(
@@ -66,7 +62,7 @@ async def callback_notif_menu(query: types.CallbackQuery):
     kb.button(text=f"Выкупы: {'✅' if db_user.notify_sales else '❌'}", callback_data="toggle_sales")
     kb.button(text=f"Поставки: {'✅' if db_user.notify_incomes else '❌'}", callback_data="toggle_incomes")
     kb.button(text=f"Ежедневный отчёт: {'✅' if db_user.notify_daily_report else '❌'}", callback_data="toggle_daily_report")
-    kb.button(text="Назад", callback_data="settings")
+    kb.button(text="⬅️Назад", callback_data="settings")
     kb.adjust(1)
     session.close()
 
@@ -117,7 +113,7 @@ async def callback_toggle_daily_report(query: types.CallbackQuery):
 
 async def callback_pos_menu(query: types.CallbackQuery):
     kb = InlineKeyboardBuilder()
-    kb.button(text="Назад", callback_data="settings")
+    kb.button(text="⬅️Назад", callback_data="settings")
     kb.adjust(1)
 
     await query.message.edit_text(
@@ -135,8 +131,12 @@ def register_settings_handlers(dp: Dispatcher):
     dp.callback_query.register(callback_toggle_daily_report, lambda c: c.data == "toggle_daily_report")
     dp.callback_query.register(callback_pos_menu, lambda c: c.data == "pos_menu")
     dp.callback_query.register(callback_track_free_accept_menu, lambda c: c.data == "track_free_accept_menu")
+    dp.callback_query.register(callback_track_free_accept_coef, lambda c: c.data == "track_free_accept_coef")
     dp.callback_query.register(callback_track_free_accept_prev, lambda c: c.data == "track_free_accept_prev")
     dp.callback_query.register(callback_track_free_accept_next, lambda c: c.data == "track_free_accept_next")
+    dp.callback_query.register(callback_track_free_accept_box, lambda c: c.data.startswith("track_free_accept_box"))
+    dp.callback_query.register(callback_add_box, lambda c: c.data.startswith("add_box_"))
+    dp.callback_query.register(callback_del_box, lambda c: c.data.startswith("del_box_"))
     dp.callback_query.register(callback_add_wh, lambda c: c.data.startswith("add_wh_"))
     dp.callback_query.register(callback_del_wh, lambda c: c.data.startswith("del_wh_"))
     dp.message.register(cmd_settings_command, Command("settings"))

@@ -11,6 +11,37 @@ semaphore = asyncio.Semaphore(MAX_CONCURRENT)
 
 CHUNK_SIZE = 5000
 
+
+async def find_article_in_all_cities(nm_id: int, query_text: str, max_pages=50) -> dict:
+    """
+    Итерируется по всем записям DestCity, для каждого dest_value (город),
+    ищет nm_id по query_text на страницах 1..max_pages (параллельно).
+    
+    Возвращает словарь: { city_id: (page, pos) или (None, None), ... }
+    где city_id - первичный ключ DestCity, 
+    page, pos - найденная страница/позиция (или None, None, если не нашли).
+    """
+
+    # 1) Загружаем все DestCity из БД
+    session = SessionLocal()
+    all_cities = session.query(DestCity).all()
+    session.close()
+
+    # 2) Готовим результат, туда будем записывать { city.id: (page, pos) }
+    results_by_city = {}
+
+    # 3) Для каждого города вызываем ту же логику поиска
+    #    Можно делать это последовательно или тоже параллельно (но аккуратно).
+    #    Здесь для примера – последовательно, чтобы не плодить слишком много запросов параллельно.
+    for city in all_cities:
+        city_id = city.id
+        dest_value = city.dest
+
+        page, pos = await find_article_in_search_async(nm_id, query_text, dest_value, max_pages=max_pages)
+        results_by_city[city_id] = (page, pos)
+
+    return results_by_city
+
 async def find_article_in_search_async(nm_id: int, query_text: str, dest_value: int, max_pages=30) -> tuple:
     """
     Асинхронная версия поиска товара nm_id по query_text + dest_value (город),
@@ -18,7 +49,7 @@ async def find_article_in_search_async(nm_id: int, query_text: str, dest_value: 
     
     Возвращает (page, position) если нашли, иначе (None, None).
     """
-    print(f"[ASYNC] Начинаем поиск nm_id={nm_id} \"{query_text}\", dest={dest_value}, max_pages={max_pages} ...")
+    
     
     async def fetch_page(page_num: int) -> tuple:
         """

@@ -21,10 +21,12 @@ async def set_commands(bot: Bot):
         BotCommand(command="/positions", description="Позиции"),
         BotCommand(command="/settings", description="Настройки"),
         BotCommand(command="/tariffs", description="Тарифы"),
+        BotCommand(command="/find_positions", description="Позиция товара")
     ]
     await bot.set_my_commands(commands)
 
 async def main():
+    print (TELEGRAM_TOKEN)
     bot = Bot(
         token=TELEGRAM_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)

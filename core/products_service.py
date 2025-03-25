@@ -7,7 +7,61 @@ import re
 import requests
 import io
 import PIL.Image as PILImage
+from db.models import Order, Product
 
+async def fill_new_products_from_orders():
+    """
+    Проходит по таблице Orders, находит все уникальные nm_id (с учётом token_id),
+    и если в таблице Products ещё нет такой записи, создаёт её.
+    """
+    session: Session = SessionLocal()
+
+    # 1) Находим все уникальные комбо (token_id, nm_id, subject, brand, supplier_article, techSize)
+    #    Можем делать distinct() сразу по нужным полям
+    results = (
+        session.query(
+            Order.token_id,
+            Order.nm_id,
+            Order.subject,
+            Order.brand,
+            Order.supplier_article,
+            Order.techSize
+        )
+        .filter(Order.nm_id.isnot(None))  # пропустим, если nm_id = None
+        .distinct(
+            Order.token_id,
+            Order.nm_id
+        )
+        .all()
+    )
+
+    print(f"Найдено {len(results)} уникальных пар (token_id, nm_id) в orders.")
+
+    # Закроем сессию и откроем заново внутри цикла или передадим session внутрь upsert_product
+    # (Если upsert_product сама создает session, то нам достаточно list(…)
+    session.close()
+
+    # 2) Идём в цикле по найденным записям
+    for row in results:
+        token_id = row[0]
+        nm_id = row[1]
+        subject_name = row[2] or ""
+        brand_name = row[3] or ""
+        supplier_article = row[4] or ""
+        techSize = row[5] or ""
+
+        # 3) Вызываем upsert_product (асинхронную)
+        #    Предполагая, что upsert_product сама создаёт SessionLocal()
+        await upsert_product(
+            nm_id=nm_id,
+            subject_name=subject_name,
+            brand_name=brand_name,
+            supplier_article=supplier_article,
+            token_id=token_id,
+            techSize=techSize
+        )
+
+    print("Заполнение новой таблицы Products из Orders завершено.")
 
 async def upsert_product(nm_id: int, subject_name: str, brand_name: str, supplier_article: str, token_id: int, techSize: str):
     """

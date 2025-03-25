@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()  # Если используем .env
+load_dotenv(override=True)  # Если используем .env
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 WB_API_KEY = os.getenv("WB_API_KEY")  # когда получим
