@@ -82,7 +82,7 @@ async def cmd_cabinet(message: types.Message, user_id: int = None):
     kb_builder.button(text="Поддержка", callback_data="help")
     kb_builder.button(text="Настройки", callback_data="settings")
     kb_builder.button(text="Позиция товара по артикулу+запросу", callback_data="find_position")
-    kb_builder.button(text="Выйти", callback_data="logout")
+    # kb_builder.button(text="Выйти", callback_data="logout")
     kb_builder.adjust(2)  # по 2 кнопке в ряд
 
     # Отправляем сообщение
