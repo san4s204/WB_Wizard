@@ -1,3 +1,5 @@
 /.venv
 /__pycache__
 .env
+core/__pycache__
+db/__pycache__
