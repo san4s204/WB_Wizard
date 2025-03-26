@@ -4,7 +4,7 @@ from aiogram import Bot
 from parse_wb import parse_wildberries
 from db.database import SessionLocal
 from sqlalchemy import func, desc
-from db.models import Order, ReportDetails, Stock, User, Product, UserWarehouse, Token
+from db.models import Order, ReportDetails, Stock, User, Product, UserWarehouse, Token, UserBoxType
 from db.models import Sale
 from aiogram.types import BufferedInputFile
 from openpyxl import Workbook
@@ -403,23 +403,24 @@ async def notify_free_acceptance(bot: Bot, new_coeffs: list[dict]):
     session = SessionLocal()
 
     for token_id, coeff_list in grouped_by_token.items():
-        # 1) Пользователи с token_id
+        # 1) Ищем всех пользователей, у которых token_id=token_id
         users = session.query(User).filter_by(token_id=token_id).all()
         if not users:
             continue
 
-        # 2) Для каждого нового/обновлённого коэффициента
+        # 2) Перебираем каждый новый/обновлённый коэффициент
         for c in coeff_list:
             # Сразу проверяем coefficient == 0
             if c.get("coefficient") != 0:
                 continue
 
             warehouse_id = c.get("warehouse_id")
-            if not warehouse_id:
-                # Если нет warehouse_id, пропускаем (не отправляем никому)
+            box_type_name = c.get("box_type_name")
+            if not warehouse_id or not box_type_name:
+                # Если чего-то нет, пропускаем
                 continue
 
-            # Парсим дату для красивого вывода
+            # Дата
             date_str = c.get("date")
             if date_str:
                 try:
@@ -431,7 +432,6 @@ async def notify_free_acceptance(bot: Bot, new_coeffs: list[dict]):
                 date_formatted = "N/A"
 
             warehouse_name = c.get("warehouse_name", "N/A")
-            box_type_name = c.get("box_type_name", "N/A")
 
             text_lines = [
                 "🆓🔔 <b>БЕСПЛАТНАЯ ПРИЁМКА!</b>",
@@ -443,17 +443,29 @@ async def notify_free_acceptance(bot: Bot, new_coeffs: list[dict]):
             ]
             msg_text = "\n".join(text_lines)
 
-            # 3) Проверяем, кто подписан на warehouse_id
-            user_ids_subscribed = session.query(UserWarehouse.user_id).filter_by(warehouse_id=warehouse_id).all()
-            user_ids_subscribed = {row[0] for row in user_ids_subscribed}
+            # 3) Определяем, кто подписан на склад:
+            user_ids_for_warehouse = session.query(UserWarehouse.user_id)\
+                .filter_by(warehouse_id=warehouse_id)\
+                .all()
+            user_ids_for_warehouse = {row[0] for row in user_ids_for_warehouse}
 
-            # Среди всех users с token_id оставим только тех, чьи id в user_ids_subscribed
+            # 3.1) Определяем, кто подписан на тип короба
+            # (Предположим, вы создали таблицу UserBoxType(user_id, box_type_name)
+            user_ids_for_box = session.query(UserBoxType.user_id)\
+                .filter_by(box_type_name=box_type_name)\
+                .all()
+            user_ids_for_box = {row[0] for row in user_ids_for_box}
+
+            # 3.2) Берём пересечение: нужно И склад, И тип короба
+            user_ids_subscribed = user_ids_for_warehouse.intersection(user_ids_for_box)
+
+            # 4) Выбираем только пользователей (из users), чей ID в user_ids_subscribed
             target_users = [u for u in users if u.id in user_ids_subscribed]
             if not target_users:
-                # Никто не подписан, пропускаем
+                # Никто не подписан
                 continue
 
-            # 4) Отправляем
+            # 5) Отправляем уведомление
             for user_obj in target_users:
                 chat_id = user_obj.telegram_id
                 try:
