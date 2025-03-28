@@ -15,13 +15,16 @@ async def set_commands(bot: Bot):
     commands = [
         BotCommand(command="/start", description="Начать работу с ботом"),
         BotCommand(command="/cabinet", description="Личный кабинет"),
-        BotCommand(command="/my_products", description="Cводный отчёт"),
-        BotCommand(command="/orders", description="Просмотреть список заказов"),
-        BotCommand(command="/help", description="Поддержка"),
-        BotCommand(command="/positions", description="Позиции"),
-        BotCommand(command="/settings", description="Настройки"),
         BotCommand(command="/tariffs", description="Тарифы"),
-        BotCommand(command="/find_positions", description="Позиция товара")
+        BotCommand(command="/my_products", description="Cводный отчёт"),
+        BotCommand(command="/find_positions", description="Позиция товара"),
+        BotCommand(command="/orders", description="Просмотреть список заказов"),
+        BotCommand(command="/settings", description="Настройки"),
+        BotCommand(command="/help", description="Поддержка"),
+        # BotCommand(command="/positions", description="Позиции"),
+        
+        
+        
     ]
     await bot.set_my_commands(commands)
 
