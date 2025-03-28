@@ -3,11 +3,12 @@ import aiohttp
 from config import WB_API_KEY
 import datetime
 from typing import List, Dict, Any
-
+import traceback
+import json
 
 BASE_URL = "https://statistics-api.wildberries.ru/api"
 SUPPLIES_BASE_URL = "https://supplies-api.wildberries.ru/api"
-
+BASE_CARDS_URL = "https://card.wb.ru/cards/v2/detail"
 
 SELLER_ANALYTICS_URL = "https://seller-analytics-api.wildberries.ru"
 
@@ -297,7 +298,52 @@ def get_search_texts_jam(
         print(f"Status code: {response.status_code}")
         print(f"Response text: {response.text}")
         return []
+
+async def get_promo_text_card(nm_id: int) -> str:
+    """
+    Делает запрос:
+    GET https://card.wb.ru/cards/v2/detail?appType=1&curr=rub&dest=-1785058&hide_dtype=13&spp=30&ab_testing=false&lang=ru&nm={nm_id}
     
+    Возвращает promoTextCard (строку) или пустую строку, если promoTextCard не найден.
+    """
+    params = {
+        "appType": "1",
+        "curr": "rub",
+        "dest": "-1785058",       # обычно -1785058 или ваше
+        "hide_dtype": "13",
+        "spp": "30",
+        "ab_testing": "false",
+        "lang": "ru",
+        "nm": str(nm_id)
+    }
+
+    # headers — минимально нужные. Если WB не требует капчи/других заголовков,
+    # можно оставить упрощённый вариант:
+    headers = {
+        "accept": "*/*",
+        "user-agent": "Mozilla/5.0 (compatible; WBWizardBot/1.0; +https://example.com)"
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(BASE_CARDS_URL, headers=headers, params=params, timeout=20) as resp:
+                if resp.status != 200:
+                    print(f"[get_promo_text_card] nm_id={nm_id}, status={resp.status}")
+                    return ""
+                text_data = await resp.text()
+                data = json.loads(text_data)
+                products = data.get("data", {}).get("products", [])
+                if not products:
+                    return ""
+                # Берём первую запись
+                product = products[0]
+                promo_text = product.get("promoTextCard", "")
+                return promo_text or ""
+    except Exception as e:
+        print(f"[get_promo_text_card] nm_id={nm_id}, исключение: {type(e).__name__} => {e}")
+        traceback.print_exc()
+        return ""
+
 def get_top_searches_for_nm_id(nm_id: int) -> list[dict]:
     """
     Возвращает список (до 10) популярных запросов для данного nm_id 

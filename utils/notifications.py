@@ -1,6 +1,6 @@
 from collections import defaultdict
 from aiogram import Bot
-
+from core.wildberries_api import get_promo_text_card
 from parse_wb import parse_wildberries
 from db.database import SessionLocal
 from sqlalchemy import func, desc
@@ -16,7 +16,6 @@ from PIL import Image as PILImage
 import io
 import datetime
 from datetime import timedelta
-
 
 def calc_price_with_spp(finished_price: float, spp: float) -> float:
     """
@@ -235,12 +234,15 @@ async def notify_new_orders(bot: Bot, orders_data: list[dict]):
             avg_daily_usage = get_average_daily_orders(nm_id, days=90)  # например, 30 дней
             days_coverage = total_stocks / avg_daily_usage if avg_daily_usage > 0 else 0
             delivery_rub = get_latest_delivery_cost(nm_id, warehouse_name)
+            promo_text = await get_promo_text_card(nm_id)
+            promo_line = promo_text if promo_text else ""
 
             caption_text = (
                 f"🆕🛍 <b>Новый заказ!</b>\n"
                 f"📅 <b>Дата:</b> {date_str}\n"
                 f"📦 <b>Товар:</b> {item_name}\n"
                 f"🔖 <b>Артикул:</b> <a href='{url}'>{nm_id}</a>\n"
+                f"🎁 <b>Акция:</b> {promo_line}\n"
                 f"⭐ <b>Рейтинг:</b> {rating}\n"
                 f"💬 <b>Отзывы:</b> {reviews}\n"
                 f"🚚 <b>Отгрузка:</b> {warehouse_name}\n"
@@ -527,12 +529,16 @@ async def notify_new_sales(bot: Bot, sales_data: list[dict]):
             image_url = sale.get("image_url", None)
 
             nm_id_link = f"<a href='https://www.wildberries.ru/catalog/{nm_id}/detail.aspx'>{nm_id}</a>"
+            promo_text = await get_promo_text_card(nm_id)
+            promo_line = promo_text if promo_text else ""
+
 
             caption_text = (
                 f"🆕🔔 <b>Новый выкуп!</b>\n"
                 f"📅 <b>Дата:</b> {date_str}\n"
                 f"📦 <b>Товар:</b> {item_name}\n"
                 f"🔖 <b>Артикул:</b> {nm_id_link}\n"
+                f"🎁 <b>Акция:</b> {promo_line}\n"
                 f"⭐ <b>Рейтинг:</b> {rating}\n"
                 f"💬 <b>Отзывы:</b> {reviews}\n"
                 f"🚚 <b>Отгрузка:</b> {warehouse_name}\n"

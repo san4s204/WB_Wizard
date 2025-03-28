@@ -82,13 +82,11 @@ async def check_acceptance_coeffs():
                 new_coeff_value = data.get("coefficient", 0)
                 if new_coeff_value != existing.coefficient:
                     # Обновляем коэффициент
-                    print(f"Обновляем коэффициент {existing.warehouse_name} {existing.box_type_name} ({existing.coefficient} -> {new_coeff_value})")
                     existing.coefficient = new_coeff_value
                     updated = True
 
                 new_allow = data.get("allowUnload", existing.allow_unload)
                 if new_allow != existing.allow_unload:
-                    print(f"Обновляем доступность приёмки {existing.warehouse_name} ({existing.allow_unload} -> {new_allow})")
                     existing.allow_unload = new_allow
                     updated = True
 
