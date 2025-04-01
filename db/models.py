@@ -30,7 +30,7 @@ class UserWarehouse(Base):
 
     # Чтобы один пользователь не мог добавить один и тот же склад несколько раз
     __table_args__ = (
-        UniqueConstraint('user_id', 'warehouse_id', name='uq_us er_warehouse'),
+        UniqueConstraint('user_id', 'warehouse_id', name='uq_user_warehouse'),
     )
 
     # relationship для удобства, если нужно

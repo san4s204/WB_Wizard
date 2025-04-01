@@ -2,10 +2,11 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram import F
 import asyncio
-from core.parse_popular_req_products import find_article_in_all_cities
+from core.parse_popular_req_products import find_article_in_current_city
 from collections import defaultdict
 from db.database import SessionLocal
-from db.models import DestCity
+from db.models import DestCity, User
+from core.sub import get_user_role
 # Предположим, ваша функция поиска:
 # from core.search_tracker import find_article_in_search_async
 
@@ -58,10 +59,26 @@ async def cmd_find_position_in_search(message: types.Message):
         )
         return
 
-    await message.answer(f"Ищем товар <b>{nm_id}</b> по запросу: <b>{query_text}</b>\nво всех городах...", parse_mode="HTML")
+    session = SessionLocal()
+    db_user = session.query(User).filter_by(telegram_id=str(message.from_user.id)).first()
+    if not db_user:
+        session.close()
+        await message.answer("Нет такого пользователя. Сначала /start.")
+        return
+
+    user_role = get_user_role(session, db_user)  # free, base, advanced, test, super...
+    if user_role == "free":
+        # Только 1 город - Москва
+        await message.answer("Ищем ваш товар...")
+        city_rows = [session.query(DestCity).filter_by(city="Москва").first()]  # (id, city, dest)
+    else:
+        await message.answer("Ищем ваш товар в 20 городах...")
+        # Допустим, берем первые 20 из DestCity или все
+        city_rows = session.query(DestCity).all()
+    session.close()
 
     # Вызываем нашу функцию поиска (пример)
-    results_dict = await find_article_in_all_cities(nm_id, query_text, max_pages=50)
+    results_dict = await find_article_in_current_city(nm_id, query_text, city_rows, max_pages=50)
 
     if not results_dict:
         await message.answer("Ошибка или нет городов в базе – результат пустой.")
@@ -80,11 +97,18 @@ async def cmd_find_position_in_search(message: types.Message):
     session.close()
 
     result_text = "\n".join(lines)
-    await message.answer(
-        f"<b>Результаты:</b>\n{result_text}\n"
-        "Мы оставляем эту функцию бесплатной для вас!\n"
-        "Взамен просим вас лишь подписаться на наш <a href='https://t.me/+kajuSJADWcBjZjli'>новостной канал</a>", 
-        parse_mode="HTML")
+    if user_role == "free":
+        await message.answer(
+            f"<b>Результаты:</b>\n{result_text}\n"
+            "Мы оставляем эту функцию бесплатной для вас!\n"
+            "Взамен просим вас лишь подписаться на наш <a href='https://t.me/+kajuSJADWcBjZjli'>новостной канал</a>\n"
+            "Желаете получить более подробную статистику? Оформите тариф Расшиернный!", 
+            parse_mode="HTML")
+    else:
+        await message.answer(
+            f"<b>Результаты:</b>\n{result_text}\n"
+            "Будьте вкурсе свежих новостей, подпишитесь на наш <a href='https://t.me/+kajuSJADWcBjZjli'>новостной канал</a> ",
+            parse_mode="HTML")
 
 async def callback_search_cities(query: types.CallbackQuery):
     user_id = query.from_user.id
@@ -123,13 +147,28 @@ async def handle_user_message(message: types.Message):
 
         query_text = parts[1]
 
-        # Запускаем поиск
-        await message.answer(f"Ищем товар {nm_id} по запросу: \"{query_text}\"")
+        session = SessionLocal()
+        db_user = session.query(User).filter_by(telegram_id=str(message.from_user.id)).first()
+        if not db_user:
+            session.close()
+            await message.answer("Нет такого пользователя. Сначала /start.")
+            return
 
-        # Предположим, у нас есть функция find_article_in_all_cities(nm_id, query_text, max_pages=30)
-        results = await find_article_in_all_cities(nm_id, query_text, max_pages=50)
+        user_role = get_user_role(session, db_user)  # free, base, advanced, test, super...
+        if user_role == "free":
+            # Только 1 город - Москва
+            await message.answer("Ищем ваш товар...")
+            city_rows = [session.query(DestCity).filter_by(city="Москва").first()]  # (id, city, dest)
+        else:
+            await message.answer("Ищем ваш товар в 20 городах...")
+            # Допустим, берем первые 20 из DestCity или все
+            city_rows = session.query(DestCity).all()
+        session.close()
 
-        if not results:
+        # Вызываем нашу функцию поиска (пример)
+        results_dict = await find_article_in_current_city(nm_id, query_text, city_rows, max_pages=50)
+
+        if not results_dict:
             await message.answer("Что-то пошло не так, пустые результаты.")
             return
 
@@ -137,7 +176,7 @@ async def handle_user_message(message: types.Message):
         # Можно достать из таблицы DestCity имя города
         session = SessionLocal()
         lines = []
-        for city_id, (page, pos) in results.items():
+        for city_id, (page, pos) in results_dict.items():
             dest_city = session.query(DestCity).get(city_id)
             city_name = dest_city.city if dest_city else f"ID={city_id}"
 
@@ -149,11 +188,18 @@ async def handle_user_message(message: types.Message):
         session.close()
 
         text_result = "\n".join(lines)
-        await message.answer(
-            f"<b>Результаты:</b>\n{text_result}\n"
-            "Мы оставляем эту функцию бесплатной для вас!\n"
-            "Взамен просим вас лишь подписаться на наш <a href='https://t.me/+kajuSJADWcBjZjli'>новостной канал</a>"
-            , parse_mode="HTML")
+        if user_role == "free":
+            await message.answer(
+                f"<b>Результаты:</b>\n{text_result}\n"
+                "Мы оставляем эту функцию бесплатной для вас!\n"
+                "Взамен просим вас лишь подписаться на наш <a href='https://t.me/+kajuSJADWcBjZjli'>новостной канал</a>\n"
+                "Желаете получить более подробную статистику? Оформите тариф Расшиернный!", 
+                parse_mode="HTML")
+        else:
+            await message.answer(
+                f"<b>Результаты:</b>\n{text_result}\n"
+                "Будьте вкурсе свежих новостей, подпишитесь на наш <a href='https://t.me/+kajuSJADWcBjZjli'>новостной канал</a> ",
+                parse_mode="HTML")
 
     else:
         # Если пользователь не в процессе ввода nm_id/query_text, можете либо игнорировать,

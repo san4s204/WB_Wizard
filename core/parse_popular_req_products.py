@@ -42,6 +42,32 @@ async def find_article_in_all_cities(nm_id: int, query_text: str, max_pages=50) 
 
     return results_by_city
 
+async def find_article_in_current_city(nm_id: int, query_text: str, city_rows: list, max_pages=50) -> dict:
+    """
+    Итерируется по всем записям DestCity, для каждого dest_value (город),
+    ищет nm_id по query_text на страницах 1..max_pages (параллельно).
+    
+    Возвращает словарь: { city_id: (page, pos) или (None, None), ... }
+    где city_id - первичный ключ DestCity, 
+    page, pos - найденная страница/позиция (или None, None, если не нашли).
+    """
+
+
+    # 2) Готовим результат, туда будем записывать { city.id: (page, pos) }
+    results_by_city = {}
+
+    # 3) Для каждого города вызываем ту же логику поиска
+    #    Можно делать это последовательно или тоже параллельно (но аккуратно).
+    #    Здесь для примера – последовательно, чтобы не плодить слишком много запросов параллельно.
+    for city in city_rows:
+        city_id = city.id
+        dest_value = city.dest
+
+        page, pos = await find_article_in_search_async(nm_id, query_text, dest_value, max_pages=max_pages)
+        results_by_city[city_id] = (page, pos)
+
+    return results_by_city
+
 async def find_article_in_search_async(nm_id: int, query_text: str, dest_value: int, max_pages=30) -> tuple:
     """
     Асинхронная версия поиска товара nm_id по query_text + dest_value (город),

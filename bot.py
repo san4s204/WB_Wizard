@@ -18,6 +18,7 @@ async def set_commands(bot: Bot):
         BotCommand(command="/tariffs", description="Тарифы"),
         BotCommand(command="/my_products", description="Cводный отчёт"),
         BotCommand(command="/find_positions", description="Позиция товара"),
+        BotCommand(command="/report_for_day", description="Еждневный отчёт за прошлую дату"),
         BotCommand(command="/orders", description="Просмотреть список заказов"),
         BotCommand(command="/settings", description="Настройки"),
         BotCommand(command="/help", description="Поддержка"),

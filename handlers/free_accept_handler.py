@@ -109,7 +109,7 @@ async def callback_track_free_accept_coef(query: CallbackQuery):
     nav_builder.adjust(2)  # две кнопки в ряд (если обе есть)
 
     # Кнопка "Назад" (в меню)
-    nav_builder.button(text="⬅️Назад", callback_data="track_free_accept_menu")
+    nav_builder.button(text="⬅️В меню", callback_data="track_free_accept_menu")
     nav_builder.adjust(1)
 
     # -- «Склеиваем» две разметки
@@ -137,12 +137,12 @@ async def callback_track_free_accept_prev(query: CallbackQuery):
     if user_pages[user_id] > 0:
         user_pages[user_id] -= 1
     # Перерисовать то же меню
-    await callback_track_free_accept_menu(query)
+    await callback_track_free_accept_coef(query)
 
 async def callback_track_free_accept_next(query: CallbackQuery):
     user_id = query.from_user.id
     user_pages[user_id] += 1
-    await callback_track_free_accept_menu(query)
+    await callback_track_free_accept_coef(query)
 
 async def callback_add_wh(query: CallbackQuery):
     """
@@ -202,7 +202,7 @@ async def callback_add_wh(query: CallbackQuery):
 
     await query.answer("Склад добавлен.")
     # Обновим меню
-    await callback_track_free_accept_menu(query)
+    await callback_track_free_accept_coef(query)
 
 async def callback_del_wh(query: CallbackQuery):
     """
@@ -233,7 +233,7 @@ async def callback_del_wh(query: CallbackQuery):
         await query.answer("У вас нет подписки на этот склад.")
 
     # Обновим меню
-    await callback_track_free_accept_menu(query)
+    await callback_track_free_accept_coef(query)
 
 async def callback_track_free_accept_box(query: CallbackQuery):
     """
