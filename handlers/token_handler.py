@@ -85,7 +85,7 @@ async def process_token(message: types.Message, state: FSMContext):
     # Предполагается, что функция save_report_details(...) синхронная.
     # Если она очень долгая, можно вынести в ThreadPool или Celery.
 
-    fill_orders(date_from_str, telegram_id=str(message.from_user.id))
+    await fill_orders(date_from_str, telegram_id=str(message.from_user.id))
 
     session2 = SessionLocal()
     db_user2 = session2.query(User).filter_by(telegram_id=str(message.from_user.id)).first()

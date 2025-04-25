@@ -18,7 +18,7 @@ class User(Base):
     notify_sales = Column(Boolean, default=True)
     notify_daily_report = Column(Boolean, default=True)
     notify_incomes = Column(Boolean, default=True)
-
+    notify_cancel = Column(Boolean, default=True)
 
 class UserWarehouse(Base):
     __tablename__ = 'user_warehouses'

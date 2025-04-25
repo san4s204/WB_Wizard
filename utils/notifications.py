@@ -45,6 +45,16 @@ def get_average_daily_orders(nm_id: int, days=90) -> float:
     avg_per_day = total_orders / days if days > 0 else 0
     return avg_per_day
 
+def count_today_cancels_by_nmId(nm_id: int) -> int:
+    session = SessionLocal()
+    today = datetime.date.today()
+    result = session.query(func.count(Order.id))\
+        .filter(Order.nm_id == nm_id)\
+        .filter(Order.is_cancel == True)\
+        .filter(func.date(Order.date) == today)\
+        .scalar()
+    session.close()
+    return result
 
 def get_average_daily_sales(nm_id: int, days=90) -> float:
     """
@@ -157,6 +167,23 @@ def get_sales_last_3_months(nm_id: int) -> int:
     finally:
         session.close()
 
+def get_cancels_last_3_months(nm_id: int) -> int:
+    """
+    Возвращает количество отказов за последние 3 месяца для nm_id.
+    """
+    session = SessionLocal()
+    try:
+        three_months_ago = datetime.date.today() - datetime.timedelta(days=90)
+        count =( 
+            session.query(func.count(Order.id))
+            .filter(Order.nm_id == nm_id)
+            .filter(Order.is_cancel == True)
+            .filter(Order.date >= three_months_ago)
+            .scalar()
+        )
+        return count if count else 0
+    finally:
+        session.close()
 
 def count_today_sales_by_nmId(nm_id: int) -> int:
     """
@@ -238,7 +265,7 @@ async def notify_new_orders(bot: Bot, orders_data: list[dict]):
             promo_line = promo_text if promo_text else ""
 
             caption_text = (
-                f"🆕🛍 <b>Новый заказ!</b>\n"
+                f"🆕🛍<b>Новый заказ!</b>🛍\n"
                 f"📅 <b>Дата:</b> {date_str}\n"
                 f"📦 <b>Товар:</b> {item_name}\n"
                 f"🔖 <b>Артикул:</b> <a href='{url}'>{nm_id}</a>\n"
@@ -278,6 +305,198 @@ async def notify_new_orders(bot: Bot, orders_data: list[dict]):
 
     session.close()
     print("Уведомления о новых заказах отправлены!")
+
+async def notify_new_sales(bot: Bot, sales_data: list[dict]):
+    """
+    Отправляет уведомление о новых/обновлённых выкупов.
+    Аналог notify_new_orders, но для данных from check_new_sales().
+    """
+    if not sales_data:
+        return
+
+    from collections import defaultdict
+    grouped_by_token = defaultdict(list)
+    for sale in sales_data:
+        t_id = sale.get("token_id")
+        grouped_by_token[t_id].append(sale)
+
+    session = SessionLocal()
+
+    for token_id, sales_list in grouped_by_token.items():
+        # Ищем пользователей, у кого user.token_id == token_id
+        users = session.query(User).filter_by(
+            token_id=token_id,
+            notify_sales=True
+        ).all()
+
+        # Если нет пользователей с этим token_id, пропускаем
+        if not users:
+            continue
+
+        for sale in sales_list:
+            nm_id = sale.get("nm_id")
+            date_str = (sale.get("date") or "N/A").replace("T", " ")
+            item_name = sale.get("itemName", "N/A")
+            warehouse_name = sale.get("warehouseName", "N/A")
+            region_name = sale.get("regionName", "N/A")
+
+            base_price = float(sale.get("price_with_disc", 0.0))
+            spp_value = float(sale.get("spp", 0.0))
+            final_price = calc_price_with_spp(base_price, spp_value)
+            commision = get_latest_commision(nm_id)
+
+            today_count = count_today_sales_by_nmId(nm_id)
+            sales_last_3_months = get_sales_last_3_months(nm_id)
+            total_stocks = get_total_stock(nm_id)
+            avg_daily_usage = get_average_daily_sales(nm_id, days=90)  # например, 90 дней
+            days_coverage = total_stocks / avg_daily_usage if avg_daily_usage > 0 else 0
+            delivery_rub = get_latest_delivery_cost(nm_id, warehouse_name)
+
+            rating = sale.get("rating", "N/A")
+            reviews = sale.get("reviews", "N/A")
+            image_url = sale.get("image_url", None)
+
+            nm_id_link = f"<a href='https://www.wildberries.ru/catalog/{nm_id}/detail.aspx'>{nm_id}</a>"
+            promo_text = await get_promo_text_card(nm_id)
+            promo_line = promo_text if promo_text else ""
+
+
+            caption_text = (
+                f"🆕🔔 💵<b>Новый выкуп!</b>💵\n"
+                f"📅 <b>Дата:</b> {date_str}\n"
+                f"📦 <b>Товар:</b> {item_name}\n"
+                f"🔖 <b>Артикул:</b> {nm_id_link}\n"
+                f"🎁 <b>Акция:</b> {promo_line}\n"
+                f"⭐ <b>Рейтинг:</b> {rating}\n"
+                f"💬 <b>Отзывы:</b> {reviews}\n"
+                f"🚚 <b>Отгрузка:</b> {warehouse_name}\n"
+                f"💰 <b>Логистика:</b> {delivery_rub:.2f}\n"
+                f"🏙 <b>Доставка:</b> {region_name}\n"
+                f"🛒 <b>Сегодня выкупов:</b> {today_count}\n"
+                f"💲 <b>Сумма:</b> {base_price:.2f}  |  💸 <b>Комиссия:</b> {commision}%\n"
+                f"🔽 <b>Цена с СПП:</b> {final_price:.2f}\n"
+                f"📊 <b>Выкупов за 3 месяца:</b> {sales_last_3_months}\n"
+                f"\n"
+                f"📦 <b>Остаток:</b> {total_stocks} шт. ⏳ <b>Хватит примерно на:</b> {days_coverage:.0f} дн."
+            )
+
+            # Рассылаем всем пользователям
+            for user in users:
+                chat_id = user.telegram_id
+                try:
+                    if image_url:
+                        try:
+                            await bot.send_photo(
+                                chat_id=chat_id,
+                                photo=image_url,
+                                caption=caption_text,
+                                parse_mode="HTML"
+                            )
+                        except Exception:
+                            fallback_text = f"{image_url}\n{caption_text}"
+                            await bot.send_message(chat_id=chat_id, text=fallback_text, parse_mode="HTML")
+                    else:
+                        await bot.send_message(chat_id=chat_id, text=caption_text, parse_mode="HTML")
+
+                except Exception as e:
+                    print(f"Ошибка при отправке пользователю {chat_id}: {e}")
+
+    session.close()
+    print("Уведомления о новых выкупах отправлены!")
+
+async def notify_cancellations(bot: Bot, orders_data: list[dict]):
+    """
+    Отправляет уведомление о НОВЫХ ОТКАЗАХ (is_cancel=True).
+    """
+    if not orders_data:
+        return
+
+    # Фильтруем: берем только те, где is_cancel=True
+    cancels_data = [o for o in orders_data if o.get("is_cancel")]
+
+    if not cancels_data:
+        return
+
+    grouped_orders = defaultdict(list)
+    for order in cancels_data:
+        tid = order.get("token_id")
+        grouped_orders[tid].append(order)
+
+    session = SessionLocal()
+    for token_id, cancels_list in grouped_orders.items():
+        # Можно в БД завести отдельный флаг notify_cancels, или использовать notify_orders.
+        # Допустим, используем тот же notify_orders=True.
+        users = session.query(User).filter(
+            User.token_id == token_id,
+            User.notify_orders == True
+        ).all()
+
+        if not users:
+            continue
+
+        for order in cancels_list:
+            nm_id = order.get("nm_id")
+            url = f"https://www.wildberries.ru/catalog/{nm_id}/detail.aspx"
+            item_name = order.get("itemName", "N/A")
+            base_price = float(order.get("price_with_disc", 0.0))
+            final_price = calc_price_with_spp(base_price, float(order.get("spp", 0.0)))
+            rating = order.get("rating", "N/A")
+            reviews = order.get("reviews", "N/A")
+            picture_url = order.get("image_url", None)
+
+            date_str = order.get("date", "N/A").replace("T", " ")
+            warehouse_name = order.get("warehouseName", "N/A")
+            region_name = order.get("regionName", "N/A")
+
+            delivery_rub = get_latest_delivery_cost(nm_id, warehouse_name)
+            # Если хотим считать "количество отказов за сегодня" — нужна отдельная функция:
+            today_count = count_today_cancels_by_nmId(nm_id)  # Дописать при желании
+            cancels_last_3_months = get_cancels_last_3_months(nm_id)  # тоже доп. функция
+            total_stocks = get_total_stock(nm_id)
+            avg_daily_usage = get_average_daily_orders(nm_id, days=90)
+            days_coverage = total_stocks / avg_daily_usage if avg_daily_usage > 0 else 0
+
+            promo_text = await get_promo_text_card(nm_id)
+            promo_line = promo_text if promo_text else ""
+
+            caption_text = (
+                f"🛑<b>Новый отказ!</b>🛑\n"
+                f"📅 <b>Дата:</b> {date_str}\n"
+                f"📦 <b>Товар:</b> {item_name}\n"
+                f"🔖 <b>Артикул:</b> <a href='{url}'>{nm_id}</a>\n"
+                f"🎁 <b>Акция:</b> {promo_line}\n"
+                f"⭐ <b>Рейтинг:</b> {rating}\n"
+                f"💬 <b>Отзывы:</b> {reviews}\n"
+                f"🚚 <b>Отгрузка:</b> {warehouse_name}\n"
+                f"💰 <b>Логистика:</b> {delivery_rub:.2f}\n"
+                f"🏙 <b>Доставка:</b> {region_name}\n"
+                f"❌ <b>Сегодня отказов:</b> {today_count}\n"
+                f"🗑 <b>Отказов за 3 месяца:</b> {cancels_last_3_months}\n"
+                f"💲 <b>Сумма:</b> {base_price:.2f}  |  🔽 <b>Цена с СПП:</b> {final_price:.2f}\n\n"
+                f"📦 <b>Остаток:</b> {total_stocks} шт. ⏳ <b>Хватит примерно на:</b> {days_coverage:.0f} дн."
+            )
+
+            for user in users:
+                chat_id = user.telegram_id
+                try:
+                    if picture_url:
+                        try:
+                            await bot.send_photo(
+                                chat_id=chat_id,
+                                photo=picture_url,
+                                caption=caption_text,
+                                parse_mode="HTML"
+                            )
+                        except Exception:
+                            fallback_text = f"{picture_url}\n{caption_text}"
+                            await bot.send_message(chat_id=chat_id, text=fallback_text)
+                    else:
+                        await bot.send_message(chat_id=chat_id, text=caption_text, parse_mode="HTML")
+                except Exception as e:
+                    print(f"Ошибка при отправке пользователю {chat_id}: {e}")
+
+    session.close()
+    print("Уведомления об отказах отправлены!")
 
 async def notify_free_incomes(bot: Bot, incomes_data: list[dict]):
     """
@@ -477,104 +696,6 @@ async def notify_free_acceptance(bot: Bot, new_coeffs: list[dict]):
 
     session.close()
     print("Уведомления о бесплатной приёмке отправлены.")
-
-async def notify_new_sales(bot: Bot, sales_data: list[dict]):
-    """
-    Отправляет уведомление о новых/обновлённых выкупов.
-    Аналог notify_new_orders, но для данных from check_new_sales().
-    """
-    if not sales_data:
-        return
-
-    from collections import defaultdict
-    grouped_by_token = defaultdict(list)
-    for sale in sales_data:
-        t_id = sale.get("token_id")
-        grouped_by_token[t_id].append(sale)
-
-    session = SessionLocal()
-
-    for token_id, sales_list in grouped_by_token.items():
-        # Ищем пользователей, у кого user.token_id == token_id
-        users = session.query(User).filter_by(
-            token_id=token_id,
-            notify_sales=True
-        ).all()
-
-        # Если нет пользователей с этим token_id, пропускаем
-        if not users:
-            continue
-
-        for sale in sales_list:
-            nm_id = sale.get("nm_id")
-            date_str = (sale.get("date") or "N/A").replace("T", " ")
-            item_name = sale.get("itemName", "N/A")
-            warehouse_name = sale.get("warehouseName", "N/A")
-            region_name = sale.get("regionName", "N/A")
-
-            base_price = float(sale.get("price_with_disc", 0.0))
-            spp_value = float(sale.get("spp", 0.0))
-            final_price = calc_price_with_spp(base_price, spp_value)
-            commision = get_latest_commision(nm_id)
-
-            today_count = count_today_sales_by_nmId(nm_id)
-            sales_last_3_months = get_sales_last_3_months(nm_id)
-            total_stocks = get_total_stock(nm_id)
-            avg_daily_usage = get_average_daily_sales(nm_id, days=90)  # например, 90 дней
-            days_coverage = total_stocks / avg_daily_usage if avg_daily_usage > 0 else 0
-            delivery_rub = get_latest_delivery_cost(nm_id, warehouse_name)
-
-            rating = sale.get("rating", "N/A")
-            reviews = sale.get("reviews", "N/A")
-            image_url = sale.get("image_url", None)
-
-            nm_id_link = f"<a href='https://www.wildberries.ru/catalog/{nm_id}/detail.aspx'>{nm_id}</a>"
-            promo_text = await get_promo_text_card(nm_id)
-            promo_line = promo_text if promo_text else ""
-
-
-            caption_text = (
-                f"🆕🔔 <b>Новый выкуп!</b>\n"
-                f"📅 <b>Дата:</b> {date_str}\n"
-                f"📦 <b>Товар:</b> {item_name}\n"
-                f"🔖 <b>Артикул:</b> {nm_id_link}\n"
-                f"🎁 <b>Акция:</b> {promo_line}\n"
-                f"⭐ <b>Рейтинг:</b> {rating}\n"
-                f"💬 <b>Отзывы:</b> {reviews}\n"
-                f"🚚 <b>Отгрузка:</b> {warehouse_name}\n"
-                f"💰 <b>Логистика:</b> {delivery_rub:.2f}\n"
-                f"🏙 <b>Доставка:</b> {region_name}\n"
-                f"🛒 <b>Сегодня выкупов:</b> {today_count}\n"
-                f"💲 <b>Сумма:</b> {base_price:.2f}  |  💸 <b>Комиссия:</b> {commision}%\n"
-                f"🔽 <b>Цена с СПП:</b> {final_price:.2f}\n"
-                f"📊 <b>Выкупов за 3 месяца:</b> {sales_last_3_months}\n"
-                f"\n"
-                f"📦 <b>Остаток:</b> {total_stocks} шт. ⏳ <b>Хватит примерно на:</b> {days_coverage:.0f} дн."
-            )
-
-            # Рассылаем всем пользователям
-            for user in users:
-                chat_id = user.telegram_id
-                try:
-                    if image_url:
-                        try:
-                            await bot.send_photo(
-                                chat_id=chat_id,
-                                photo=image_url,
-                                caption=caption_text,
-                                parse_mode="HTML"
-                            )
-                        except Exception:
-                            fallback_text = f"{image_url}\n{caption_text}"
-                            await bot.send_message(chat_id=chat_id, text=fallback_text, parse_mode="HTML")
-                    else:
-                        await bot.send_message(chat_id=chat_id, text=caption_text, parse_mode="HTML")
-
-                except Exception as e:
-                    print(f"Ошибка при отправке пользователю {chat_id}: {e}")
-
-    session.close()
-    print("Уведомления о новых выкупах отправлены!")
 
 async def generate_daily_excel_report(token_id: int) -> bytes:
     """

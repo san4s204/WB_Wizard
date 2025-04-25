@@ -3,19 +3,18 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-
+from webdriver_manager.chrome import ChromeDriverManager
 from selenium_stealth import stealth
 
 
 import time
 
 async def parse_wildberries(url: str):
-    service = Service(r"C:\Users\paaku\Desktop\WB Wizard\chromedriver-win64\chromedriver.exe")
     options = webdriver.ChromeOptions()
     options.add_argument('--headless')  # если нужен режим без UI
     options.add_argument('--window-size=1920,1080')     # Задать размер окна, чтобы элементы верстки появлялись
-
-    driver = webdriver.Chrome(service=service, options=options)
+    options.add_argument('--no-sandbox')
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()),options=options)
 
      # Подключаем stealth
     stealth(
@@ -49,28 +48,6 @@ async def parse_wildberries(url: str):
         time.sleep(20)
 
 
-        # -- Рейтинг
-        try:
-            rating_element = driver.find_element(
-                By.CSS_SELECTOR,
-                "span.product-review__rating.address-rate-mini.address-rate-mini--sm"
-            )
-            rating = rating_element.text
-        except:
-            rating = "Рейтинг не найден"
-
-        # -- Количество отзывов
-        try:
-            reviews_element = driver.find_element(
-                By.CSS_SELECTOR,
-                "span.product-review__count-review.j-wba-card-item-show.j-wba-card-item-observe"
-            )
-            reviews_count = reviews_element.text
-        except:
-            reviews_count = "Отзывы не найдены"
-
-    
-
         # -- Поиск картинки
 
         # СПОСОБ А: Ищем именно тег <img>, если на скриншоте действительно img, 
@@ -96,8 +73,6 @@ async def parse_wildberries(url: str):
 
         return {
             "title": title,
-            "rating": rating,
-            "reviews": reviews_count,
             "image_url": image_url,
             "store_link": store_link,
         }
@@ -108,8 +83,6 @@ async def parse_wildberries(url: str):
         # При любой ошибке всё равно возвращаем словарь
         return {
             "title": "",
-            "rating": "",
-            "reviews": "",
             "image_url": "",
             "store_link": ""
         }
@@ -118,9 +91,7 @@ async def parse_wildberries(url: str):
         driver.quit()
 
 
-if __name__ == '__main__':
-    url = "https://www.wildberries.ru/catalog/152649654/detail.aspx"
-    parse_wildberries(url)
+
 
 
 # #  # 4. Процент отказов, возвратов и т.д. (просто пример)

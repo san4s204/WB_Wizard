@@ -9,8 +9,8 @@ import json
 BASE_URL = "https://statistics-api.wildberries.ru/api"
 SUPPLIES_BASE_URL = "https://supplies-api.wildberries.ru/api"
 BASE_CARDS_URL = "https://card.wb.ru/cards/v2/detail"
-
 SELLER_ANALYTICS_URL = "https://seller-analytics-api.wildberries.ru"
+CARD_BASE_URL = "https://card.wb.ru/cards/detail"
 
 async def get_orders(date_from: str, user_token:str, flag: int = 0):
     """
@@ -45,7 +45,6 @@ async def get_orders(date_from: str, user_token:str, flag: int = 0):
         print(f"Ошибка при запросе к Wildberries /orders: {e}")
         return []
 
-
 async def get_report_detail_by_period(
     date_from: str, 
     date_to: str, 
@@ -76,7 +75,6 @@ async def get_report_detail_by_period(
     except Exception as e:
         print(f"Ошибка при запросе к Wildberries /report_detail: {e}")
         return []
-    
 
 async def fetch_full_report(date_from: str, date_to: str, user_token: str) -> list[dict]:
     """
@@ -106,7 +104,6 @@ async def fetch_full_report(date_from: str, date_to: str, user_token: str) -> li
             current_rrdid = last_rrdid
     
     return all_data
-
 
 async def get_sales(date_from: str, user_token:str, flag: int = 0) -> list[dict]:
     """
@@ -222,83 +219,6 @@ def get_seller_info(user_token:str) -> dict:
     response.raise_for_status()
     return response.json()
 
-def get_search_texts_jam(
-    nm_ids: List[int],
-    current_period: Dict[str, Any],
-    top_order_by: str = "orders",
-    order_field: str = "avgPosition",
-    order_mode: str = "asc",
-    limit: int = 30,) -> List[Dict[str, Any]]:
-    """
-    Делает POST на https://seller-analytics-api.wildberries.ru/api/v2/search-report/product/search-texts
-    Получает список поисковых запросов.
-
-    Параметры:
-      nm_ids: список артикулов (макс. 50)
-      current_period, past_period:
-        форматы вида {
-          "dateFrom": "2023-08-01",
-          "dateTo":   "2023-08-15"
-          }
-        или {"days": 7} (зависит от спецификации)
-      top_order_by:
-        одно из ["openCard", "addToCart", "openToCart", "orders", "cartToOrder"]
-      order_field:
-        одно из ["avgPosition","openCard","addToCart","openToCart","orders","cartToOrder","visibility","minPrice","maxPrice"]
-      order_mode: "asc" или "desc"
-      limit: 1..30 (кол-во поисковых запросов по товару, которое вернётся)
-
-    Возвращает список словарей, к примеру:
-    [
-      {
-        "text": "...",
-        "nmId": 123456,
-        "frequency": {"current": 5, "dynamics": 50},
-        ...
-      },
-      ...
-    ]
-
-    Пример current_period/past_period:
-      current_period = {"dateFrom": "2023-08-01", "dateTo": "2023-08-15"}
-      past_period = {"dateFrom": "2023-07-17", "dateTo": "2023-07-31"}
-      или
-      current_period = {"days": 14}
-      past_period = {"days": 14}
-    """
-    url = f"{SELLER_ANALYTICS_URL}/api/v2/search-report/product/search-texts"
-    headers = {
-        "accept": "application/json",
-        "Content-Type": "application/json",
-        "Authorization": WB_API_KEY  # токен из подписки
-    }
-
-    body = {
-        "currentPeriod": current_period,
-        "nmIds": nm_ids,  # список артикулов
-        "topOrderBy": top_order_by,
-        "orderBy": {
-            "field": order_field,
-            "mode": order_mode
-        },
-        "limit": limit
-    }
-
-    try:
-        response = requests.post(url, headers=headers, json=body, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        # Обычно структура: {"data": {"items": [...], ...}}
-        # Вернём "items" как список
-        items = data.get("data", {}).get("items", [])
-        return items
-
-    except requests.RequestException as e:
-        print(f"[get_search_texts_jam] Ошибка при запросе: {e}")
-        print(f"Status code: {response.status_code}")
-        print(f"Response text: {response.text}")
-        return []
-
 async def get_promo_text_card(nm_id: int) -> str:
     """
     Делает запрос:
@@ -344,53 +264,80 @@ async def get_promo_text_card(nm_id: int) -> str:
         traceback.print_exc()
         return ""
 
-def get_top_searches_for_nm_id(nm_id: int) -> list[dict]:
+async def get_search_queries_mayak(nm_id: int) -> list[dict]:
     """
-    Возвращает список (до 10) популярных запросов для данного nm_id 
-    через URL:
-      https://seller-content.wildberries.ru/ns/analytics-api/content-analytics/api/v2/product/search-texts?nm_id=...
-    Пример ответа:
-      {
-        "data": {
-          "phrases": [
-            {
-              "position": 1,
-              "phrase": "сумка холодильник",
-              "count": 11,
-              "dynamic": 11
-            }
-          ]
-        }
-      }
-    Возвращает список dict {"position":..., "phrase":..., "count":..., "dynamic":...}.
+    Делает запрос к сервису https://app.mayak.bz/api/v1/wb/products/{nm_id}/word_ranks,
+    который (по вашим данным) возвращает поисковые запросы по артикулу.
+    
+    Возвращает list[dict], где каждый dict - информация о рангах.
+    
+    Пример URL:
+      https://app.mayak.bz/api/v1/wb/products/198362333/word_ranks
     """
 
-    url = f"https://seller-content.wildberries.ru/ns/analytics-api/content-analytics/api/v2/product/search-texts?nm_id={nm_id}"
+    url = f"https://app.mayak.bz/api/v1/wb/products/{nm_id}/word_ranks"
+
+    # Если нужна cookie/другие заголовки, можно оставить:
     headers = {
-        "Accept": "application/json",
-        'accept-language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-        'content-type': 'application/json',
-        'cookie': '_wbauid=9786480411727682056; ___wbu=062e554c-918d-4b90-aed9-7ecd21e06b87.1727682056; wbx-validation-key=8264e3bd-f157-4671-866d-5435893ac871; cfidsw-wb=; external-locale=ru; x-supplier-id-external=a59b225e-1830-4679-9523-4f92170eae3f; __zzatw-wb=MDA0dC0cTHtmcDhhDHEWTT17CT4VHThHKHIzd2UuPW4jX0xaIzVRP0FaW1Q4NmdBEXUmCQg3LGBwVxlRExpceEdXeiwcGHpvK1UJFGJCQmllbQwtUlFRS19/Dg4/aU5ZQ11wS3E6EmBWGB5CWgtMeFtLKRZHGzJhXkZpdRVYCkFjQ0Zxd1xEIyVje2IldVxUCCtMR3pvWE8KCxhEcl9vG3siXyoIJGM1Xz9EaVhTMCpYQXt1J3Z+KmUzPGwgZkpdJ0lXVggqGw1pN2wXPHVlLwkxLGJ5MVIvE0tsP0caRFpbQDsyVghDQE1HFF9BWncyUlFRS2EQR0lrZU5TQixmG3EVTQgNND1aciIPWzklWAgSPwsmIBR+bidXDQ1kREZxbxt/Nl0cOWMRCxl+OmNdRkc3FSR7dSYKCTU3YnAvTCB7SykWRxsyYV5GaXUVCAwUFT9DcjAmPG0gX0RdJUpeSgoqGxR0b1lYCQxiPXYmMCxxVxlRDxZhDhYYRRcje0I3Yhk4QhgvPV8/YngiD2lIYCJKWFEJKxwRd24jS3FPLH12X30beylOIA0lVBMhP05yRG0u1A==; WBTokenV3=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3Mzg2NTE3NTMsInZlcnNpb24iOjIsInVzZXIiOiI1Mjk2MDUxNCIsInNoYXJkX2tleSI6IjE5IiwiY2xpZW50X2lkIjoic2VsbGVyLXBvcnRhbCIsInNlc3Npb25faWQiOiI5M2Y4NjU0NGM5Zjg0ZDk2Yjc3NzZjZjM0ZTAzMGU3YSIsInVzZXJfcmVnaXN0cmF0aW9uX2R0IjoxNjkwMTc2NzY3LCJ2YWxpZGF0aW9uX2tleSI6IjUwMDk3MWUyZjhmYTUwM2M5ZjU3YTBiZGU5YmU1MzQwNGEyYjJlYjgxMGQ0YjNjMGMwY2U4NWY4ZmEwNTM1ZmUifQ.J8_hICp4fawk0rrDY-GQOJDEaI_ZUZIYSH7gIogE1aNJjmK4pFEwBgmFozxt4grjoGX0kSp8AtcQdVW8LpX4gqSgV1lupieke3rLIaJNSlfruQXzPnTCpaqFn5w_wVc2bejhWDOQyzCOjy5SOdxSh9Y9O8vaC3TTE-ITgWgJ51StNwAtd0q4VO2ap3cAKO6BsAO-Gxqh4zzKBxER0nWI9XRwziMx3HcuB9PpQWP37ghNXblM_ULsVx2I-Y6lRGnnF071KDMwearno-lMqDCY3i_554TCizUhZgzBDhG_C5TMo7GNPp1_W67_9JR2yrU9KQ3KYrV-TTqQaXSBuF6CFg',
-        'origin': 'https://seller.wildberries.ru',
-        'priority': 'u=1, i',
-        'referer': 'https://seller.wildberries.ru/',
-        'sec-ch-ua': '"Opera GX";v="116", "Chromium";v="131", "Not_A Brand";v="24"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'same-site',
-        "Authorization": WB_API_KEY,
-        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 OPR/116.0.0.0 (Edition Yx GX 03)'
+        # Ниже cookie из вашего запроса; в реальном коде лучше или убрать,
+        # или обновлять при необходимости, т.к. cookie может протухнуть.
+        'Cookie': '_wb_session=aYdd6fMGWcprPpg90AmXycZhpUuopR7I4bkL8Xh9u7cf%2BgpjdNMg%2FRYiOXQNUcCO5Xt9MNWG3vWeqS14NfGxpHtInACRweIgRdvXq8Ye7RHz%2BKFMAYtaM8qywjtL54pqUrPC%2Bi6evAo9u3O%2B8qj9UnLBlDDMjBLGdnN88MD99UPo8zTQqx9ahggFGuJsd9IZv0618JjOadHD7SL2cCwoZMVJEMvsE8texj59eFp8bNn%2BSBkVRug7DticaBUuhFRx%2F6t3jVrZIOKaoCl8%2FgdfCNMfJJF1spqk5N1sMMPLe9M%2Fu1oc4nochJoXMA9InxjXCjyzxheJ5%2F3IhxPBxOjLef80E8oi%2B3Z4xktJhuL%2FFgqiH%2FMdrDVWSz65Xv9ERddFZFAnEyKcHvLdcPi0fL45yHZD1PECEx3YLPaNQoeZxcsEKeR461zti1rDU46OCSA8eUdC9WVCzzCh%2BE3XsWvZpX2XVxBbNQB%2BagKzdZhR1HvTtqmuxktaqp43QbhN3x4PkTV%2Fr9rJuUHYOcyTCCig2YPqbY%2BAwrK%2F9HS70%2FikvkCmOmWWJD53H4tLy0IUv3V3udBof2XWmfTaOXmZyS%2FibziwIw9IYVVhoZRkdnhJoSqFilAZrWvWfWIXYEuQdCd36rTJvCbBSHmFhILH4Hltn3fp2aKfzgdtxZM59ge%2FTg%3D%3D--vjGmBTcg6z3eLabQ--Ca9SvxpwJvBXaWblijc1uA%3D%3D', 
+        'accept': '*/*',
+        'user-agent': 'Mozilla/5.0 (compatible; WBWizardBot/1.0; +https://example.com)'
     }
 
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        # data["data"]["phrases"]
-        phrases = data.get("data", {}).get("phrases", [])
-        return phrases  # список словарей
-    except requests.RequestException as e:
-        print(f"[get_top_searches_for_nm_id] Ошибка: {e}")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=30) as resp:
+                if resp.status != 200:
+                    print(f"[get_search_queries_mayak] nm_id={nm_id}, status={resp.status}")
+                    return []
+                text_data = await resp.text()
+                data = json.loads(text_data)
+                # Предположим, API возвращает что-то вроде {"data": {...}}
+                # Надо смотреть реальный формат. Если "word_ranks" - это ключ, ищите data["word_ranks"] и т.д.
+                # Ниже просто пример, как вернуть data
+                return data  # Или data.get("word_ranks", [])
+
+    except Exception as e:
+        print(f"[get_search_queries_mayak] nm_id={nm_id}, исключение: {type(e).__name__} => {e}")
+        traceback.print_exc()
         return []
+
+async def get_rating_and_feedbacks(nm_id: int,
+                                   dest: int = -1257786,
+                                   spp: int = 30,
+                                   app_type: int = 1) -> tuple[float | None, int | None]:
+    """
+    Запрашивает карточку товара и возвращает (review_rating, feedbacks).
+
+    ▸ `nm_id`      – артикул WB  
+    ▸ `dest`       – регион (по-умолчанию = Москва)  
+    ▸ `spp` / `app_type` – стандартные параметры карточки.
+
+    Возвращает кортеж:
+        (review_rating: float | None, feedbacks: int | None)
+    """
+    params = {
+        "appType":  app_type,
+        "curr":     "rub",
+        "dest":     dest,
+        "hide_dtype": 13,
+        "spp":      spp,
+        "nm":       nm_id
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(CARD_BASE_URL, params=params, timeout=15) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+        product = data.get("data", {}).get("products", [{}])[0]
+        rating   = product.get("reviewRating")        # float 4.6
+        reviews  = product.get("feedbacks")           # int   29331
+        return rating, reviews
+
+    except Exception as exc:
+        print(f"[get_rating_and_feedbacks] nm_id={nm_id} → ошибка: {exc}")
+        return None, None

@@ -127,6 +127,7 @@ async def check_new_orders() -> list[dict]:
                 "regionName": o.region_name,
                 "price_with_disc": raw_data.get("priceWithDisc", 0.0),
                 "spp": raw_data.get("spp", 0.0),
+                "is_cancel": o.is_cancel,
                 "rating": product.rating if product else "N/A",
                 "reviews": product.reviews if product else "N/A",
                 "image_url": product.image_url if product else None

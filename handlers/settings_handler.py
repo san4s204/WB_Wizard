@@ -61,6 +61,7 @@ async def callback_notif_menu(query: types.CallbackQuery):
     kb.button(text=f"Заказы: {'✅' if db_user.notify_orders else '❌'}", callback_data="toggle_orders")
     kb.button(text=f"Выкупы: {'✅' if db_user.notify_sales else '❌'}", callback_data="toggle_sales")
     kb.button(text=f"Поставки: {'✅' if db_user.notify_incomes else '❌'}", callback_data="toggle_incomes")
+    kb.button(text=f"Отказы: {'✅' if db_user.notify_cancel else '❌'}", callback_data="toggle_cancel")
     kb.button(text=f"Ежедневный отчёт: {'✅' if db_user.notify_daily_report else '❌'}", callback_data="toggle_daily_report")
     kb.button(text="⬅️Назад", callback_data="settings")
     kb.adjust(1)
@@ -85,6 +86,16 @@ async def callback_toggle_sales(query: types.CallbackQuery):
     user = session.query(User).filter_by(telegram_id=str(query.from_user.id)).first()
     if user:
         user.notify_sales = not user.notify_sales
+        session.commit()
+    session.close()
+    await query.answer("Изменения сохранены!")
+    await callback_notif_menu(query)
+
+async def callback_toggle_cancel(query: types.CallbackQuery):
+    session = SessionLocal()
+    user = session.query(User).filter_by(telegram_id=str(query.from_user.id)).first()
+    if user:
+        user.notify_cancel = not user.notify_cancel
         session.commit()
     session.close()
     await query.answer("Изменения сохранены!")
@@ -128,6 +139,7 @@ def register_settings_handlers(dp: Dispatcher):
     dp.callback_query.register(callback_toggle_orders, lambda c: c.data == "toggle_orders")
     dp.callback_query.register(callback_toggle_sales, lambda c: c.data == "toggle_sales")
     dp.callback_query.register(callback_toggle_incomes, lambda c: c.data == "toggle_incomes")
+    dp.callback_query.register(callback_toggle_cancel, lambda c: c.data == "toggle_cancel")
     dp.callback_query.register(callback_toggle_daily_report, lambda c: c.data == "toggle_daily_report")
     dp.callback_query.register(callback_pos_menu, lambda c: c.data == "pos_menu")
     dp.callback_query.register(callback_track_free_accept_menu, lambda c: c.data == "track_free_accept_menu")

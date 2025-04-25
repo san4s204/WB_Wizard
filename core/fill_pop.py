@@ -4,19 +4,19 @@ from db.models import Product
 from db.models import ProductSearchRequest, PopularRequest
 from sqlalchemy.orm import Session
 import time
+import asyncio
 
-from core.wildberries_api import get_top_searches_for_nm_id  # наша функция на seller-content.wildberries.ru
+from core.wildberries_api import get_search_queries_mayak  # наша функция на seller-content.wildberries.ru
 
 
-def fill_product_search_requests_free():
+async def fill_product_search_requests_async():
     """
-    1) Берёт все товары (Product).
-    2) Для каждого вызывает get_top_searches_for_nm_id(nm_id) (до 10 запросов).
-    3) Для каждого phrase ищем frequency в popular_request (по query_text=phrase).
-    4) Если frequency >= 200, сохраняем/обновляем в product_search_requests.
-    5) Лимит 3 запроса/мин => ставим time.sleep(20) между товарами.
-
-    Старые записи в product_search_requests НЕ удаляем.
+    Асинхронная версия:
+    1) Берём все товары (Product).
+    2) Для каждого nm_id вызываем (асинхронно) get_search_queries_mayak(nm_id).
+    3) В ответе берем "word_ranks": [{ "word":..., "wb_frequency":..., ...}, ...].
+    4) Записываем/обновляем в product_search_requests.
+    5) Чтобы не превышать лимит ~3 запроса/мин, делаем await asyncio.sleep(20) между товарами.
     """
 
     session = SessionLocal()
@@ -30,38 +30,35 @@ def fill_product_search_requests_free():
         if not nm_id:
             continue
 
-        print(f"[INFO] Получаем 10 популярных запросов для nm_id={nm_id}...")
-        phrases = get_top_searches_for_nm_id(nm_id)  # список словарей
+        print(f"[INFO] Получаем поисковые запросы для nm_id={nm_id} через mayak.bz...")
 
-        # чтобы не превысить ~3 запр./мин
-        time.sleep(20)
-
-        if not phrases:
-            print(f"[WARN] Пусто для nm_id={nm_id}")
+        # Асинхронный запрос
+        response_data = await get_search_queries_mayak(nm_id)
+        # Ожидаемый формат ответа: { "word_ranks": [ { "word":"...", "wb_frequency":..., ...}, ...] }
+        if not response_data or "word_ranks" not in response_data:
+            print(f"[WARN] Пусто или нет word_ranks для nm_id={nm_id}")
+            # Подождём 20 сек перед следующим товаром
+            await asyncio.sleep(2)
             continue
 
-        # phrases ~ [{'position':1, 'phrase':'сумка холодильник', 'count':..., 'dynamic':...}, ...]
-        for ph in phrases:
-            phrase_text = ph.get("phrase", "").strip().lower()
+        word_ranks = response_data["word_ranks"]
+
+        # Сохраняем/обновляем в product_search_requests
+        for wr in word_ranks:
+            phrase_text = wr.get("word", "").strip().lower()
+            freq = wr.get("wb_frequency", 0)
+
+            if freq < 20:
+                continue
+
             if not phrase_text:
                 continue
 
-            # Ищем в popular_request
-            pop_item = session.query(PopularRequest).filter_by(query_text=phrase_text).first()
-            if not pop_item:
-                # Если не нашли в popular_request => request_count=0
-                freq = 0
-            else:
-                freq = pop_item.request_count or 0
-
-            # Проверяем, есть ли запись (nm_id, phrase) в product_search_requests
             existing = session.query(ProductSearchRequest).filter_by(
                 nm_id=nm_id,
                 search_text=phrase_text
             ).first()
-
             if not existing:
-                # Вставляем новую
                 new_req = ProductSearchRequest(
                     nm_id=nm_id,
                     search_text=phrase_text,
@@ -71,11 +68,13 @@ def fill_product_search_requests_free():
                 session.add(new_req)
                 count_filled += 1
             else:
-                # Обновляем частоту / дату
                 existing.current_freq = freq
                 existing.last_update = datetime.datetime.utcnow()
 
         session.commit()
+
+        # Пауза 20 сек между товарами
+        await asyncio.sleep(2)
 
     session.close()
     print(f"[INFO] Заполнили/обновили {count_filled} записей в product_search_requests.")
