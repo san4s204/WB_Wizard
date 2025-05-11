@@ -26,7 +26,8 @@ def get_all_warehouses(token_id: int) -> list[tuple]:
     .all()
     session.close()
 
-    return [(r[0], r[1]) for r in rows if r[0] and r[1]]
+    return sorted([(r[0], r[1]) for r in rows if r[0] and r[1]],
+                  key=lambda row: (row[1].startswith('СЦ'), row[1]))  # Сначал по алфавиту потом по СЦ
 
 async def callback_track_free_accept_menu(query: CallbackQuery):
     """

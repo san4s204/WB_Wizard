@@ -4,7 +4,7 @@ from db.database import SessionLocal
 from db.models import Order, Product, Token
 from sqlalchemy.orm import Session
 from utils.logger import logger
-
+from utils.token_utils import get_active_tokens  # Импортируем функцию для получения активных токенов
 
 # Можно где-то хранить в памяти или в отдельной таблице. Для примера -- глобально:
 LAST_CHECK_DATETIME = datetime.datetime.utcnow() - datetime.timedelta(minutes=30)
@@ -21,7 +21,7 @@ async def check_new_orders() -> list[dict]:
     
     session: Session = SessionLocal()
 
-    tokens_list = session.query(Token).all()
+    tokens_list = get_active_tokens(session)
 
     all_new_orders_dicts = []
 
@@ -36,7 +36,8 @@ async def check_new_orders() -> list[dict]:
         orders_data = await get_orders(date_from_str, token_value, flag=0)
         if not orders_data:
             continue
-
+        
+        logger.info(f"Token_id={token_obj.id}, получено {len(orders_data)} заказов.")
         new_or_updated_orders = []
         max_change_date = LAST_CHECK_DATETIME
 

@@ -4,6 +4,7 @@ from db.database import SessionLocal
 from db.models import Stock, Token
 from sqlalchemy.orm import Session
 from utils.logger import logger
+from utils.token_utils import get_active_tokens  # Импортируем функцию для получения активных токенов
 
 # Глобальная переменная для хранения времени последней проверки
 LAST_CHECK_DATETIME = datetime.datetime.utcnow() - datetime.timedelta(minutes=30)
@@ -20,7 +21,7 @@ async def check_stocks() -> list[Stock]:
 
     session: Session = SessionLocal()
 
-    tokens_list = session.query(Token).all()
+    tokens_list = get_active_tokens(session)
 
     all_new_stocks_dicts = []
 

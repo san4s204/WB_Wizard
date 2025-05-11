@@ -2,6 +2,7 @@ import datetime
 from db.database import SessionLocal
 from db.models import AcceptanceCoefficient, Token
 from core.wildberries_api import get_acceptance_coefficients
+from utils.token_utils import get_active_tokens
 
 async def check_acceptance_coeffs():
     """
@@ -12,7 +13,7 @@ async def check_acceptance_coeffs():
     print("Начали проверку коэффициентов приёмки")
     session = SessionLocal()
 
-    tokens_list = session.query(Token).all()
+    tokens_list = get_active_tokens(session)
     all_new_coeffs = []
 
     for token_obj in tokens_list:

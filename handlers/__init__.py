@@ -11,6 +11,7 @@ from .tariffs_handler import register_tariffs_handler
 from .find_positions_handler import register_find_position_handlers
 from .stats_handler import register_stats_handler
 from .generate_report_day_handler import register_repots_for_day_handler
+from .features_handler import register_features_handler
 # ... и т.д.
 
 def register_all_handlers(dp):
@@ -26,5 +27,6 @@ def register_all_handlers(dp):
     register_settings_handlers(dp)
     register_positions_handlers(dp)
     register_tariffs_handler(dp)
+    register_features_handler(dp)
     register_find_position_handlers(dp)
     # регистрируем все остальные

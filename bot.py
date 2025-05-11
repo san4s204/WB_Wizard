@@ -16,6 +16,7 @@ async def set_commands(bot: Bot):
         BotCommand(command="/start", description="Начать работу с ботом"),
         BotCommand(command="/cabinet", description="Личный кабинет"),
         BotCommand(command="/tariffs", description="Тарифы"),
+        BotCommand(command="/features", description="Возможности бота"),
         BotCommand(command="/my_products", description="Cводный отчёт"),
         BotCommand(command="/positions", description="Позиции"),
         BotCommand(command="/find_positions", description="Позиция товара по артикулу + запросу"),

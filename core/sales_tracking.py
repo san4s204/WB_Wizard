@@ -4,6 +4,7 @@ from db.models import Sale, Product, Token
 from sqlalchemy.orm import Session
 from utils.logger import logger
 from core.wildberries_api import get_sales
+from utils.token_utils import get_active_tokens  # Импортируем функцию для получения активных токенов
 
 LAST_CHECK_DATETIME_SALES = datetime.datetime.utcnow() - datetime.timedelta(minutes=30)
 PERIOD_DAYS = 90
@@ -19,7 +20,7 @@ async def check_new_sales() -> list[dict]:
 
     session: Session = SessionLocal()
 
-    tokens = session.query(Token).all()
+    tokens = get_active_tokens(session)
 
     date_from_str = (datetime.datetime.now() - datetime.timedelta(days=PERIOD_DAYS)).isoformat()
     logger.debug(f"date_from = {date_from_str}")

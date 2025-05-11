@@ -1,9 +1,7 @@
 import datetime
 from db.database import SessionLocal
 from db.models import Product
-from db.models import ProductSearchRequest, PopularRequest
-from sqlalchemy.orm import Session
-import time
+from db.models import ProductSearchRequest
 import asyncio
 
 from core.wildberries_api import get_search_queries_mayak  # наша функция на seller-content.wildberries.ru

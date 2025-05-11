@@ -58,6 +58,7 @@ class Token(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     subscription_until = Column(DateTime, nullable=True)  # До какого момента действует подписка
     role = Column(String(50), default="free")            # free, premium, enterprise и т.д.
+    is_active = Column(Boolean, default=True, index=True)   # ← новый столбец
 
 class Order(Base):
     __tablename__ = "orders"

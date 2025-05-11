@@ -3,6 +3,7 @@ from db.database import SessionLocal
 from db.models import Income, Token, Product  # Пример имён моделей
 from core.wildberries_api import get_incomes
 from utils.logger import logger  # Если есть логгер
+from utils.token_utils import get_active_tokens
 # from config import BASE_URL, etc...
 
 LAST_CHECK_DATETIME = datetime.datetime.utcnow() - datetime.timedelta(minutes=30)
@@ -21,7 +22,7 @@ async def check_new_incomes() -> list[dict]:
     session = SessionLocal()
 
     # Получаем все токены
-    tokens_list = session.query(Token).all()
+    tokens_list = get_active_tokens(session)
 
     all_new_incomes_dicts = []
     # Период, за который берём поставки (например, последние 90 дней)
