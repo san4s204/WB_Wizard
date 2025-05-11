@@ -76,3 +76,4 @@ media/
 *.tar.gz
 *.tgz
 *.7z
+.env
