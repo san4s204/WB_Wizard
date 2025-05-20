@@ -34,11 +34,6 @@ async def run_check_and_notify_all(bot):
         await notify_free_acceptance(bot, new_coef)
 
 
-    """ Запуск проверки посавок """
-    new_incomes = await check_new_incomes()
-    if new_incomes:
-        await notify_free_incomes(bot, new_incomes)
-
     """ Запускает все проверки: остатки, заказы, выкупы """
     await check_stocks()
 
