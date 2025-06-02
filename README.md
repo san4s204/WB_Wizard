@@ -27,7 +27,7 @@
 * Wildberries [API‑ключ поставщика](https://seller.wildberries.ru/)
 * Linux / macOS / Windows
 
-### Установка
+### Установка и запуск(Linux)
 
 ```bash
 git clone https://github.com/san4s204/WB_Wizard.git
@@ -38,6 +38,20 @@ pip install -r requirements.txt # Установка библиотек
 nano .env                       # вписываем токены и настройки
 python bot.py
 ```
+
+Установка и запуск в Windows (PowerShell)
+
+```bash
+git clone https://github.com/san4s204/WB_Wizard.git
+cd WB_Wizard
+py -3.12 -m venv venv
+.\venv\Scripts\Activate.ps1        # или venv\Scripts\activate.bat
+pip install -r requirements.txt
+copy .env.example .env
+notepad .env                          # впишите TELEGRAM_TOKEN и другие ключи
+python bot.py
+```
+---
 
 ## ⚙️ Файл `.env`
 
