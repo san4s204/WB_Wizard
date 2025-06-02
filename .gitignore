@@ -75,12 +75,12 @@ media/
 chromedriver
 chromedriver.exe
 chromedriver-*
-chromedriver_win32/*
-chromedriver-win64/*
+chromedriver_win32/
+chromedriver-win64/
 *chromedriver*
 
 # Misc archives
 *.zip
-*.tar.g
+*.tar.gz
 *.tgz
 *.7z

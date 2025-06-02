@@ -1,80 +1,26 @@
-import re
-import aiohttp
-import asyncio
-from typing import Union
+import requests
+import json
 
-# ──────────────────────────────────────────────────────────────
-# 1. Вспомогательные функции для построения URL к CDN «basket»
-# ──────────────────────────────────────────────────────────────
-def _basket_host(vol: int) -> str:
-    """Определяем номер корзины по vol (диапазоны актуальны на май-2025)."""
-    if   vol <=  143: return "01"
-    elif vol <=  287: return "02"
-    elif vol <=  431: return "03"
-    elif vol <=  719: return "04"
-    elif vol <= 1007: return "05"
-    elif vol <= 1061: return "06"
-    elif vol <= 1115: return "07"
-    elif vol <= 1169: return "08"
-    elif vol <= 1313: return "09"
-    elif vol <= 1601: return "10"
-    elif vol <= 1655: return "11"
-    elif vol <= 1919: return "12"
-    elif vol <= 2045: return "13"
-    elif vol <= 2189: return "14"
-    elif vol <= 2405: return "15"
-    elif vol <= 2621: return "16"
-    elif vol <= 2837: return "17"
-    else:             return "18"
+url = "https://seller-content.wildberries.ru/ns/analytics-api/content-analytics/api/v2/product/search-texts?nm_id=156960074"
 
-def build_image_url(nm_id: int, size: str = "big", n: int = 1) -> str:
-    """Формируем прямую ссылку на изображение товара."""
-    vol  = nm_id // 100_000
-    part = nm_id // 1_000
-    host = _basket_host(vol)
-    return (f"https://basket-{host}.wbbasket.ru/"
-            f"vol{vol}/part{part}/{nm_id}/images/{size}/{n}.webp")
+payload = {}
+headers = {
+  'accept': '*/*',
+  'accept-language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+  'content-type': 'application/json',
+  'cookie': '__bsa=basket-ru-21; ___wbu=4211469e-c015-4562-a220-e87c052e416a.1717486866; wbx-validation-key=41427566-556b-4be5-9abf-b23616e077af; _wbauid=4965581071741317518; external-locale=ru; x-supplier-id-external=a59b225e-1830-4679-9523-4f92170eae3f; WBTokenV3=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3NDEzMTc1NjIsInZlcnNpb24iOjIsInVzZXIiOiI1Mjk2MDUxNCIsInNoYXJkX2tleSI6IjE5IiwiY2xpZW50X2lkIjoic2VsbGVyLXBvcnRhbCIsInNlc3Npb25faWQiOiI1MzQ0ZWIwY2MxMjA0MGJmODgzN2I4ZTJjYjdkYmQxNSIsInVzZXJfcmVnaXN0cmF0aW9uX2R0IjoxNjkwMTc2NzY3LCJ2YWxpZGF0aW9uX2tleSI6ImQzMmU0MjgzYTIyY2YzZGVjZjRlZTFkNDM4NjUyZjI3Yjg5NGI4N2FmYjUxNzJjOTRiZDdiMjJmZjA4NTI0ZjMifQ.EloOIVyj37_EOzXkMzmf-ZjPhI36OaJ1RF-IdXOpeV2Lh8vNSejOc5KP-vYl69dDX8mjz3eKg-uIneKw1Q1qFrjCPhvDQtra7hc9iwbJ3EqO_Ex-bbWRYGJPLb_rdSKt8GBOcUD84V3rvzCiitz3zLQ5y9W0xI2MX3ANwNNW7oWaUdL5DrWJIcbci8xxS5ArIckc0JP2A2p34Dk_j7JxwXo1trfBlNaNJDEGIqPC7XUDWo8rlYq7uMbzsUBwRbdO41yHyTEbtON3yQB-zF70cAbig3kUhB-JkzrLmbFZU4VsPEhizLvLkbQNLmpvDUY7V-tVdEBKbZNFt0gIsD0aaQ',
+  'origin': 'https://seller.wildberries.ru',
+  'priority': 'u=1, i',
+  'referer': 'https://seller.wildberries.ru/',
+  'sec-ch-ua': '"Opera GX";v="116", "Chromium";v="131", "Not_A Brand";v="24"',
+  'sec-ch-ua-mobile': '?0',
+  'sec-ch-ua-platform': '"Windows"',
+  'sec-fetch-dest': 'empty',
+  'sec-fetch-mode': 'cors',
+  'sec-fetch-site': 'same-site',
+  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 OPR/116.0.0.0 (Edition Yx GX)'
+}
 
-# ──────────────────────────────────────────────────────────────
-# 2. Основная асинхронная функция
-# ──────────────────────────────────────────────────────────────
-async def parse_wildberries(ref: Union[str, int]) -> dict:
-    # 1. nmId
-    nm_id = int(ref) if isinstance(ref, int) else int(re.search(r'(\d{6,})', ref).group(1))
+response = requests.request("GET", url, headers=headers, data=payload)
 
-    # 2. запрос карточки
-    api_tpl = "https://card.wb.ru/cards/{ver}/detail?appType=1&curr=rub&dest=-1257786&nm={nm}"
-    versions = ("v1", "v3", "v5")           # пробуем по очереди
-    timeout  = aiohttp.ClientTimeout(total=3)
-
-    async with aiohttp.ClientSession(timeout=timeout) as s:
-        for ver in versions:
-            try:
-                async with s.get(api_tpl.format(ver=ver, nm=nm_id)) as r:
-                    if r.status != 200:
-                        continue
-                    data = await r.json()
-                    product = data["data"]["products"][0]
-                    break      # успех
-            except Exception:
-                continue       # пробуем следующую версию
-        else:
-            raise RuntimeError("card.wb.ru не ответил на всех версиях API")
-
-    # 3. результат
-    title       = product.get("name", "")
-    supplier_id = product.get("supplierId")
-    store_link  = f"https://www.wildberries.ru/seller/{supplier_id}" if supplier_id else ""
-    image_url   = build_image_url(nm_id, "big", 1)
-
-    return {"title": title, "image_url": image_url, "store_link": store_link}
-
-# ──────────────────────────────────────────────────────────────
-# 3. Пример использования (проверка)
-# ──────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    async def test():
-        res = await parse_wildberries("https://www.wildberries.ru/catalog/218346802/detail.aspx")
-        print(res)
-
-    asyncio.run(test())
+print(response.text)
