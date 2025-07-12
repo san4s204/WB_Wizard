@@ -28,6 +28,8 @@ async def cmd_positions(message: types.Message, user_id: int = None):
 
     
 
+    token_id = db_user.token_id
+
     # Создаём Workbook
     wb = Workbook()
 
@@ -36,10 +38,10 @@ async def cmd_positions(message: types.Message, user_id: int = None):
     wb.remove(default_sheet)
 
     # Генерируем отчёт
-    generate_positions_report(session, wb)
+    generate_positions_report(session, wb, token_id)
     
     # Генерирем листы с динамикой позиций по городам
-    generate_dynamic_positions_report(session, wb)
+    generate_dynamic_positions_report(session, wb, token_id)
 
     session.close()
 
@@ -72,7 +74,7 @@ def get_default_period(session) -> tuple:
     end_date = start_date + datetime.timedelta(days=90)
     return start_date, end_date
 
-def generate_positions_report(session, wb):
+def generate_positions_report(session, wb, token_id: int):
     """
     Создаёт лист "Positions" в книге wb:
       - Собирает данные из product_positions (page, position, request_count, query_text),
@@ -132,6 +134,7 @@ def generate_positions_report(session, wb):
 
     products = (
         session.query(Product)
+        .filter(Product.token_id == token_id)
         .filter(Product.nm_id.in_(nm_ids_in_positions))
         .all()
     )
@@ -252,7 +255,7 @@ def generate_positions_report(session, wb):
 
     print("[generate_positions_report] Завершено.")
 
-def generate_dynamic_positions_report(session, wb, start_date: datetime.date = None, end_date: datetime.date = None):
+def generate_dynamic_positions_report(session, wb, token_id: int, start_date: datetime.date = None, end_date: datetime.date = None):
     """
     Для каждого города (из таблицы DestCity) создаёт отдельный лист.
     В листе выводится динамика позиций товаров по дням за период [start_date, end_date].
@@ -288,6 +291,7 @@ def generate_dynamic_positions_report(session, wb, start_date: datetime.date = N
         # Собираем все ProductPositions для данного города в диапазоне дат
         pps_city = session.query(ProductPositions).filter(
             ProductPositions.city_id == city.id,
+            ProductPositions.token_id == token_id,
             ProductPositions.check_dt >= datetime.datetime.combine(start_date, datetime.time.min),
             ProductPositions.check_dt <= datetime.datetime.combine(end_date, datetime.time.max)
         ).all()
@@ -337,7 +341,10 @@ def generate_dynamic_positions_report(session, wb, start_date: datetime.date = N
 
         # nm_ids (товары, у которых в этом городе есть позиции)
         nm_ids = set(pp.nm_id for pp in pps_city)
-        products = session.query(Product).filter(Product.nm_id.in_(nm_ids)).all()
+        products = (session.query(Product)
+                    .filter(Product.token_id == token_id)
+                    .filter(Product.nm_id.in_(nm_ids))
+                    .all())
 
         current_row = 2
 
