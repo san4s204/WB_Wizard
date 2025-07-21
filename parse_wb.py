@@ -22,6 +22,7 @@ def _basket_host(vol: int) -> str:
     elif vol <= 2405: return "15"
     elif vol <= 2621: return "16"
     elif vol <= 2837: return "17"
+    elif vol == 4118: return "23"
     else:             return "18"
 
 def build_image_url(nm_id: int, size: str = "big", n: int = 1) -> str:
