@@ -248,3 +248,11 @@ class TrackedPosition(Base):
     page = Column(Integer, nullable=False)
     position = Column(Integer, nullable=False)
     check_dt = Column(DateTime, default=datetime.datetime.utcnow)
+
+class Media(Base):
+    __tablename__ = 'media'
+
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String(255), nullable=False)
+    resize_img = Column(LargeBinary, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)

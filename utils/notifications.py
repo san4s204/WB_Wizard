@@ -4,7 +4,7 @@ from core.wildberries_api import get_promo_text_card
 from parse_wb import parse_wildberries
 from db.database import SessionLocal
 from sqlalchemy import func, desc
-from db.models import Order, ReportDetails, Stock, User, Product, UserWarehouse, Token, UserBoxType
+from db.models import Order, ReportDetails, Stock, User, Product, UserWarehouse, Token, UserBoxType, Media
 from db.models import Sale
 from aiogram.types import BufferedInputFile
 from openpyxl import Workbook
@@ -655,8 +655,8 @@ async def notify_free_acceptance(bot: Bot, new_coeffs: list[dict]):
             warehouse_name = c.get("warehouse_name", "N/A")
 
             text_lines = [
-                "🆓🔔 <b>БЕСПЛАТНАЯ ПРИЁМКА!</b>",
-                f"📅 <b>Дата:</b> {date_formatted}",
+                "🆓🔔 <b>БЕСПЛАТНАЯ Поставка!</b>",
+                f"📅 <b>Дата:</b> <b>{date_formatted}</b>",
                 f"🏬 <b>Склад:</b> {warehouse_name}",
                 f"📦 <b>Тип коробки:</b> {box_type_name}",
                 "Коэффициент: Бесплатная",
@@ -688,14 +688,33 @@ async def notify_free_acceptance(bot: Bot, new_coeffs: list[dict]):
 
             # 5) Отправляем уведомление
             for user_obj in target_users:
-                chat_id = user_obj.telegram_id
-                try:
-                    await bot.send_message(chat_id=chat_id, text=msg_text, parse_mode="HTML")
-                except Exception as exc:
-                    print(f"Ошибка при отправке пользователю {chat_id}: {exc}")
+                media_record = session.query(Media).order_by(Media.created_at.desc()).first()
+                if media_record and media_record.resize_img:
+                    # Отправляем фотографию с подписью
+                    try:
+                        await bot.send_photo(
+                            chat_id=user_obj.telegram_id,
+                            photo=media_record.resize_img,
+                            caption=msg_text,
+                            parse_mode="HTML"
+                        )
+                    except Exception as exc:
+                        print(f"Ошибка при отправке фотографии пользователю {user_obj.telegram_id}: {exc}")
+                else:
+                    # Если изображение не найдено, отправляем обычное сообщение
+                    try:
+                        await bot.send_message(
+                            chat_id=user_obj.telegram_id,
+                            text=msg_text,
+                            parse_mode="HTML"
+                        )
+                    except Exception as exc:
+                        print(f"Ошибка при отправке сообщения пользователю {user_obj.telegram_id}: {exc}")
 
     session.close()
     print("Уведомления о бесплатной приёмке отправлены.")
+
+                
 
 async def generate_daily_excel_report(token_id: int) -> bytes:
     """

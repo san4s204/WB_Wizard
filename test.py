@@ -1,26 +1,47 @@
-import requests
-import json
+from db.models import Media
+from db.database import SessionLocal
+import os
+from datetime import datetime
 
-url = "https://seller-content.wildberries.ru/ns/analytics-api/content-analytics/api/v2/product/search-texts?nm_id=156960074"
+# Путь к вашему изображению (замените на реальный путь!)
+IMAGE_PATH = 'поставка.png'
 
-payload = {}
-headers = {
-  'accept': '*/*',
-  'accept-language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-  'content-type': 'application/json',
-  'cookie': '__bsa=basket-ru-21; ___wbu=4211469e-c015-4562-a220-e87c052e416a.1717486866; wbx-validation-key=41427566-556b-4be5-9abf-b23616e077af; _wbauid=4965581071741317518; external-locale=ru; x-supplier-id-external=a59b225e-1830-4679-9523-4f92170eae3f; WBTokenV3=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3NDEzMTc1NjIsInZlcnNpb24iOjIsInVzZXIiOiI1Mjk2MDUxNCIsInNoYXJkX2tleSI6IjE5IiwiY2xpZW50X2lkIjoic2VsbGVyLXBvcnRhbCIsInNlc3Npb25faWQiOiI1MzQ0ZWIwY2MxMjA0MGJmODgzN2I4ZTJjYjdkYmQxNSIsInVzZXJfcmVnaXN0cmF0aW9uX2R0IjoxNjkwMTc2NzY3LCJ2YWxpZGF0aW9uX2tleSI6ImQzMmU0MjgzYTIyY2YzZGVjZjRlZTFkNDM4NjUyZjI3Yjg5NGI4N2FmYjUxNzJjOTRiZDdiMjJmZjA4NTI0ZjMifQ.EloOIVyj37_EOzXkMzmf-ZjPhI36OaJ1RF-IdXOpeV2Lh8vNSejOc5KP-vYl69dDX8mjz3eKg-uIneKw1Q1qFrjCPhvDQtra7hc9iwbJ3EqO_Ex-bbWRYGJPLb_rdSKt8GBOcUD84V3rvzCiitz3zLQ5y9W0xI2MX3ANwNNW7oWaUdL5DrWJIcbci8xxS5ArIckc0JP2A2p34Dk_j7JxwXo1trfBlNaNJDEGIqPC7XUDWo8rlYq7uMbzsUBwRbdO41yHyTEbtON3yQB-zF70cAbig3kUhB-JkzrLmbFZU4VsPEhizLvLkbQNLmpvDUY7V-tVdEBKbZNFt0gIsD0aaQ',
-  'origin': 'https://seller.wildberries.ru',
-  'priority': 'u=1, i',
-  'referer': 'https://seller.wildberries.ru/',
-  'sec-ch-ua': '"Opera GX";v="116", "Chromium";v="131", "Not_A Brand";v="24"',
-  'sec-ch-ua-mobile': '?0',
-  'sec-ch-ua-platform': '"Windows"',
-  'sec-fetch-dest': 'empty',
-  'sec-fetch-mode': 'cors',
-  'sec-fetch-site': 'same-site',
-  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 OPR/116.0.0.0 (Edition Yx GX)'
-}
+def upload_image_to_db(image_path: str):
+    """
+    Загружает одно PNG-изображение в базу данных.
+    """
+    # Проверяем существование файла
+    if not os.path.exists(image_path):
+        print(f"❗️ Ошибка: файл '{image_path}' не найден!")
+        return
 
-response = requests.request("GET", url, headers=headers, data=payload)
+    # Создаем сессию к базе данных
+    session = SessionLocal()
 
-print(response.text)
+    try:
+        # Читаем бинарные данные изображения
+        with open(image_path, 'rb') as f:
+            image_binary = f.read()
+
+        # Создаем запись в базе данных
+        media_entry = Media(
+            filename=os.path.basename(image_path),
+            resize_img=image_binary,
+            created_at=datetime.utcnow()
+        )
+
+        # Добавляем запись и фиксируем транзакцию
+        session.add(media_entry)
+        session.commit()
+
+        print(f"✅ Изображение '{os.path.basename(image_path)}' успешно загружено в базу данных!")
+
+    except Exception as e:
+        session.rollback()
+        print(f"❗️ Произошла ошибка: {e}")
+
+    finally:
+        session.close()
+
+if __name__ == '__main__':
+    upload_image_to_db(IMAGE_PATH)
