@@ -10,7 +10,7 @@ BASE_URL = "https://statistics-api.wildberries.ru/api"
 SUPPLIES_BASE_URL = "https://supplies-api.wildberries.ru/api"
 BASE_CARDS_URL = "https://card.wb.ru/cards/v2/detail"
 SELLER_ANALYTICS_URL = "https://seller-analytics-api.wildberries.ru"
-CARD_BASE_URL = "https://card.wb.ru/cards/detail"
+CARD_BASE_URL = "https://card.wb.ru/cards/v2/detail"
 
 async def get_orders(date_from: str, user_token:str, flag: int = 0):
     """

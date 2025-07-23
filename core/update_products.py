@@ -1,92 +1,110 @@
 import datetime
 import io
+import logging
+import sys
 from db.database import SessionLocal
 from db.models import Product
 from PIL import Image as PILImage
 from parse_wb import parse_wildberries
 from core.wildberries_api import get_rating_and_feedbacks
 
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s]: %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler("update_log.log")
+    ]
+)
+logger = logging.getLogger(__name__)
+
 async def update_products_if_outdated():
     """
-    Проверяем товары, у которых last_update > 30 дней назад.
-    Если старше - парсим с помощью parse_wildberries(url) и обновляем rating, reviews, image_url.
-    Вставляем/обновляем resize_img (200x200) и last_update.
+    Проверяет товары, у которых last_update > 30 дней назад или rating/reviews=NULL.
+    Парсит актуальные данные с помощью parse_wildberries(url) и обновляет рейтинг, отзывы, image_url.
+    Создаёт/обновляет миниатюру изображения (resize_img) размером 200x200 пикселей и устанавливает current timestamp в last_update.
     """
+    logger.info("Начало процедуры обновления товаров...")
+    
     session = SessionLocal()
-
-    # cutoff = сегодня - 30 дней
-    cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=30)
-
-    # 1) Берём товары, у которых last_update < cutoff
-    products_to_update = session.query(Product).filter(Product.last_update < cutoff).all()
-    print(f"[INFO] Найдено {len(products_to_update)} товаров для обновления (старше 30 дней).")
-
-    for product in products_to_update:
+    
+    # Определяем границу дат для отбора товаров (30 дней назад)
+    cutoff_date = datetime.datetime.utcnow() - datetime.timedelta(days=30)
+    
+    # Выбираем товары, удовлетворяющие условиям фильтрации
+    products_to_update = session.query(Product).filter(
+        (Product.last_update < cutoff_date) |
+        (Product.rating.is_(None)) |
+        (Product.reviews.is_(None))
+    ).all()
+    
+    logger.info(f"Найдено {len(products_to_update)} товаров для обновления.")
+    
+    for idx, product in enumerate(products_to_update, start=1):
         nm_id = product.nm_id
         if not nm_id:
-            # Если нет nm_id, пропускаем
+            logger.warning(f"Пропускаем продукт #{product.id} (нет nm_id)")
             continue
-
-        # Генерируем ссылку на товар (по желанию можно использовать вашу логику)
-        # Допустим, вы используете стандартный URL: "https://www.wildberries.ru/catalog/{nm_id}/detail.aspx"
-        url = f"https://www.wildberries.ru/catalog/{nm_id}/detail.aspx"
+        
+        logger.info(f"{idx}/{len(products_to_update)}. Обрабатываю nm_id={nm_id}")
+        
+        # Получаем рейтинг и количество отзывов
         rating, reviews = await get_rating_and_feedbacks(nm_id)
-
+        
         if rating is None or reviews is None:
-            print(f"[SKIP] nm_id={nm_id} – карточка не найдена, пропускаем.")
+            logger.warning(f"Карточка nm_id={nm_id} не найдена, пропускаем.")
             continue
-
-        print(f"[INFO] Обновляем nm_id={nm_id}, URL={url}")
+        
+        # Формируем URL товара
+        url = f"https://www.wildberries.ru/catalog/{nm_id}/detail.aspx"
+        
+        # Парсим страницу товара
         try:
             parse_result = await parse_wildberries(url)
-            # Ваш parse_wildberries(url) возвращает, например:
-            # {
-            #   "rating": "4.7",
-            #   "reviews_count": "123",
-            #   "image_url": "https://some..."
-            # }
-            # если у вас другой формат, адаптируйте
-
-            # Достаём рейтинг (float), отзывы (int), image_url (str)
-            rating_raw = rating if rating  is not None else "N/A"
-            reviews_raw = reviews if reviews is not None else "N/A"
-            new_image_url = parse_result.get("image_url", "")
-            print("рейтинг = ", rating_raw, "\nотзывы = ",reviews_raw)
-
-            
-
-            # 3) Сохраняем в БД
-            product.rating = rating
-            product.reviews = reviews_raw
-            product.image_url = new_image_url
-
-            # 4) Если есть новое изображение, скачиваем и делаем resize_img
-            if new_image_url and "не найден" not in new_image_url.lower():
-                try:
-                    import requests
-                    resp = requests.get(new_image_url, timeout=10)
-                    if resp.status_code == 200:
-                        pil_img = PILImage.open(io.BytesIO(resp.content))
-                        # Масштабируем до 200x200
-                        pil_img = pil_img.resize((200, 200), PILImage.Resampling.LANCZOS)
-
-                        out_bytes = io.BytesIO()
-                        pil_img.save(out_bytes, format="PNG")
-                        out_bytes.seek(0)
-
-                        # Записываем сырые байты PNG в поле resize_img
-                        product.resize_img = out_bytes.getvalue()
-                except Exception as e:
-                    print(f"[WARN] Ошибка при скачивании/обработке картинки nm_id={nm_id}: {e}")
-
-            # Обновляем last_update на сейчас
-            product.last_update = datetime.datetime.utcnow()
-
-            session.commit()
-
         except Exception as e:
-            print(f"[ERROR] Не удалось обновить nm_id={nm_id}: {e}")
-            # Можно continue или session.rollback() при необходимости
-
+            logger.error(f"Ошибка при парсинге nm_id={nm_id}: {e}")
+            continue
+        
+        # Обновляем рейтинг и отзывы
+        product.rating = float(rating) if rating is not None else None
+        product.reviews = int(reviews) if reviews is not None else None
+        
+        # Обновляем URL изображения
+        new_image_url = parse_result.get("image_url", "")
+        product.image_url = new_image_url
+        
+        # Загружаем и масштабируем изображение до размера 200x200 px
+        if new_image_url and "не найден" not in new_image_url.lower():
+            try:
+                from PIL import Image
+                import requests
+                from io import BytesIO
+                
+                response = requests.get(new_image_url, stream=True, timeout=10)
+                response.raise_for_status()
+                
+                img = Image.open(BytesIO(response.content)).convert("RGB")
+                resized_img = img.resize((200, 200), resample=Image.Resampling.LANCZOS)
+                
+                output_buffer = BytesIO()
+                resized_img.save(output_buffer, format="JPEG")
+                output_buffer.seek(0)
+                
+                product.resize_img = output_buffer.read()
+            except Exception as ex:
+                logger.warning(f"Ошибка при обработке изображения nm_id={nm_id}: {ex}")
+        
+        # Устанавливаем отметку времени последнего обновления
+        product.last_update = datetime.datetime.utcnow()
+        
+        # Фиксируем изменения в базе данных
+        try:
+            session.commit()
+            logger.info(f"Успешно обновлён nm_id={nm_id}")
+        except Exception as exc:
+            session.rollback()
+            logger.error(f"Ошибка сохранения nm_id={nm_id}: {exc}")
+    
     session.close()
-    print("[INFO] Обновление товаров (рейтинг, отзывы, картинка) завершено.")
+    logger.info("Завершение процедуры обновления товаров.")

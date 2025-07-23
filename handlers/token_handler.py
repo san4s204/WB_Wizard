@@ -15,7 +15,7 @@ from parse_wb import parse_wildberries
 PERIOD_DAYS = 90
 
 # Период забора данных за 90 дней
-date_from_str = datetime.datetime.now() - datetime.timedelta(days=PERIOD_DAYS)
+date_from_str = (datetime.datetime.now() - datetime.timedelta(days=PERIOD_DAYS)).strftime('%Y-%m-%d')
 
 def is_valid_wb_token(token: str) -> bool:
     """Простейшая проверка: строка должна содержать минимум 2 точки и быть длиной > 50."""
