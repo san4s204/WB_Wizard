@@ -103,18 +103,11 @@ class ReportDetails(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     create_dt = Column(String, nullable=False)  # дата создания
-    subject_name = Column(String, nullable=False)  # категория товара
     nm_id = Column(Integer, nullable=False)  # артикул товара
-    brand_name = Column(String, nullable=True)  # бренд товара
-    quantity = Column(Integer, default=0)  # количество
-    retail_price = Column(Float, default=0.0)  # розничная цена
-    retail_amount = Column(Float, default=0.0)  # сумма розничных продаж
     office_name = Column(String, nullable=False)  # пункт выдачи заказа
     order_dt = Column(String, nullable=False)  # дата заказа
-    delivery_amount = Column(Integer, default=0)  # количество доставок
-    return_amount = Column(Integer, default=0)  # количество возвратов
-    delivery_rub = Column(Float, default=0.0)  # стоимость доставки
     commission_percent = Column(Float, default=0.0)  # процент комиссии
+    report_type = Column(Integer, server_default="0", nullable=True)  # тип отчета
 
 
 class Sale(Base):
@@ -256,3 +249,19 @@ class Media(Base):
     filename = Column(String(255), nullable=False)
     resize_img = Column(LargeBinary, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class LogisticTariff(Base):
+    __tablename__ = "logistic_tariffs"
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    warehouse_id  = Column(String(50), nullable=False)
+    box_type_id   = Column(Integer, nullable=False)
+    box_type_name = Column(String(50), nullable=True)
+    tariff_rub    = Column(Float, nullable=False)          # стоимость в ₽
+    updated_at    = Column(DateTime, default=datetime.datetime.utcnow,
+                                         onupdate=datetime.datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('warehouse_id', 'box_type_id',
+                         name='uq_wh_box_type'),           # 1 запись – 1 склад+тара
+    )

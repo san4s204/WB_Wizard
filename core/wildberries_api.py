@@ -11,6 +11,7 @@ SUPPLIES_BASE_URL = "https://supplies-api.wildberries.ru/api"
 BASE_CARDS_URL = "https://card.wb.ru/cards/v2/detail"
 SELLER_ANALYTICS_URL = "https://seller-analytics-api.wildberries.ru"
 CARD_BASE_URL = "https://card.wb.ru/cards/v2/detail"
+COMMON_BASE = "https://common-api.wildberries.ru/api/v1/tariffs"
 
 async def get_orders(date_from: str, user_token:str, flag: int = 0):
     """
@@ -169,6 +170,59 @@ async def get_incomes(date_from: str, user_token: str) -> list[dict]:
     except Exception as e:
         print(f"Ошибка при запросе к Wildberries /incomes: {e}")
         return []
+
+async def get_tariffs_for_date(user_token: str, kind: str = "box",  dt: datetime.date | str | None = None) -> list[dict]:
+    """
+    kind = 'box' | 'pallet'
+    dt   = 'YYYY-MM-DD'  (по‑умолчанию сегодня)
+    Возвращает список словарей:
+      {'warehouseName': 'Маркетплейс',
+       'warehouseId'  : 507 | None,
+       'boxTypeId'    : 2 | 6,
+       'tariff'       : 47.5}
+    """
+
+    headers = {
+        "Authorization": user_token
+    }
+
+    if dt is None:
+        dt = datetime.date.today()
+    if isinstance(dt, datetime.date):
+        dt = dt.isoformat()                                     # '2025-07-14'
+
+    url = f"{COMMON_BASE}/{kind}"
+    params = {"date": dt}                                       # 👈 передаём дату
+    timeout = aiohttp.ClientTimeout(total=30)
+
+    async with aiohttp.ClientSession(timeout=timeout) as s:
+        async with s.get(url, headers=headers, params=params) as r:
+            r.raise_for_status()
+            full = await r.json()
+
+    # ---------------- разбор под новый формат ----------------
+    wl = full["response"]["data"]["warehouseList"]
+
+    cleaned: list[dict] = []
+    for w in wl:
+        if kind == "box":
+            raw_cost = w.get("boxDeliveryBase")
+            b_type_id, b_type_name = 2, "Короба"
+        else:                      # pallet
+            raw_cost = w.get("palletDeliveryValueBase")
+            b_type_id, b_type_name = 6, "Паллеты"
+
+        if not raw_cost:           # пропустим, если нет тарифа
+            continue
+
+        cost = float(raw_cost.replace(",", "."))
+        cleaned.append({
+            "warehouseName": w.get("warehouseName"),
+            "boxTypeId"    : b_type_id,
+            "boxTypeName"  : b_type_name,
+            "tariff"       : cost
+        })
+    return cleaned
 
 async def get_acceptance_coefficients(user_token: str) -> list[dict]:
     """

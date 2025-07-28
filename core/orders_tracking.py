@@ -5,10 +5,11 @@ from db.models import Order, Product, Token
 from sqlalchemy.orm import Session
 from utils.logger import logger
 from utils.token_utils import get_active_tokens  # Импортируем функцию для получения активных токенов
+from core.products_service import upsert_product
 
 # Можно где-то хранить в памяти или в отдельной таблице. Для примера -- глобально:
 LAST_CHECK_DATETIME = datetime.datetime.utcnow() - datetime.timedelta(minutes=30)
-PERIOD_DAYS = 90
+PERIOD_DAYS = 7
 async def check_new_orders() -> list[dict]:
     """
     Опрос /orders, сохраняем новые/обновлённые заказы в БД.
@@ -59,6 +60,19 @@ async def check_new_orders() -> list[dict]:
             subject = data.get("subject", "")
             supplier_art = data.get("supplierArticle", "")
             tech_size = data.get("techSize", "")
+
+            product_in_db = session.query(Product).filter_by(nm_id=nm_id).first()
+
+            if product_in_db is None:
+                # upsert_product — асинхронная, поэтому обязательно await
+                await upsert_product(
+                    nm_id           = nm_id,
+                    subject_name    = subject,
+                    brand_name      = data.get("brand"),
+                    supplier_article= supplier_art,
+                    token_id        = token_obj.id,
+                    techSize        = tech_size
+                )
 
             if not existing_order:
                 # Новый заказ

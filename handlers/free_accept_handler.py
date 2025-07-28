@@ -5,7 +5,6 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardMarkup
 from db.database import SessionLocal
 from db.models import User, UserWarehouse, AcceptanceCoefficient, UserBoxType
 from collections import defaultdict
-from aiogram import Dispatcher
 from core.sub import get_user_role
 
 user_pages = defaultdict(lambda: 0)  # user_pages[user_id] = current_page

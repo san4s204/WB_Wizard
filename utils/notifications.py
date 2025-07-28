@@ -1,11 +1,9 @@
 from collections import defaultdict
 from aiogram import Bot
 from core.wildberries_api import get_promo_text_card
-from parse_wb import parse_wildberries
 from db.database import SessionLocal
 from sqlalchemy import func, desc
-from db.models import Order, ReportDetails, Stock, User, Product, UserWarehouse, Token, UserBoxType, Media
-from db.models import Sale
+from db.models import Order, ReportDetails, Stock, User, Product, UserWarehouse, Token, UserBoxType, Media, LogisticTariff, Sale
 from aiogram.types import BufferedInputFile
 from openpyxl import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
@@ -83,24 +81,6 @@ def count_today_orders_by_nmId(nm_id: int) -> int:
     session.close()
     return result
 
-def get_latest_delivery_cost(nm_id: int, office_name: str) -> float:
-    """
-    Возвращает стоимость логистики (delivery_rub) из последней записи report_details
-    для заданного nm_id и office_name.
-    """
-    session = SessionLocal()
-    try:
-        latest_record = (
-            session.query(ReportDetails.delivery_rub)
-            .filter(ReportDetails.nm_id == nm_id)
-            .filter(ReportDetails.office_name == office_name)
-            .order_by(desc(ReportDetails.order_dt))
-            .first()
-        )
-        return latest_record.delivery_rub if latest_record else 0.0
-    finally:
-        session.close()
-
 def get_latest_commision(nm_id: int) -> int:
     """
     Возвращает комиссию (commission) из последней записи report_details для заданного nm_id.
@@ -110,7 +90,6 @@ def get_latest_commision(nm_id: int) -> int:
         latest_record = (
             session.query(ReportDetails.commission_percent)
             .filter(ReportDetails.nm_id == nm_id)
-            .filter(ReportDetails.quantity > 0)
             .order_by(desc(ReportDetails.order_dt))
             .first()
         )
@@ -224,6 +203,17 @@ async def notify_new_orders(bot: Bot, orders_data: list[dict]):
 
     session = SessionLocal()
 
+
+     # ────────────────────── 1. кешируем тарифы на весь вызов ─────────────────────
+    #   { "СЦ Казань": 47.5, ... }
+    tariffs_by_wh: dict[str, float] = dict(
+        session.query(
+            LogisticTariff.warehouse_id,
+            func.min(LogisticTariff.tariff_rub)        # самый «дешёвый» короб
+        ).group_by(LogisticTariff.warehouse_id)
+    )
+    # ──────────────────────────────────────────────────────────────────────────────
+
     # Для каждого token_id достаём пользователей, рассылаем
     for token_id, orders_list in grouped_orders.items():
 
@@ -254,13 +244,12 @@ async def notify_new_orders(bot: Bot, orders_data: list[dict]):
 
             warehouse_name = order.get("warehouseName", "N/A")
             region_name = order.get("regionName", "N/A")
-            delivery_cost = get_latest_delivery_cost(nm_id, warehouse_name)
             today_count = count_today_orders_by_nmId(nm_id)
             orders_last_3_months = get_orders_last_3_months(nm_id)
             total_stocks = get_total_stock(nm_id)
             avg_daily_usage = get_average_daily_orders(nm_id, days=90)  # например, 30 дней
             days_coverage = total_stocks / avg_daily_usage if avg_daily_usage > 0 else 0
-            delivery_rub = get_latest_delivery_cost(nm_id, warehouse_name)
+            delivery_rub = tariffs_by_wh.get(warehouse_name)
             promo_text = await get_promo_text_card(nm_id)
             promo_line = promo_text if promo_text else ""
 
@@ -322,6 +311,16 @@ async def notify_new_sales(bot: Bot, sales_data: list[dict]):
 
     session = SessionLocal()
 
+    # ────────────────────── 1. кешируем тарифы на весь вызов ─────────────────────
+    #   { "СЦ Казань": 47.5, ... }
+    tariffs_by_wh: dict[str, float] = dict(
+        session.query(
+            LogisticTariff.warehouse_id,
+            func.min(LogisticTariff.tariff_rub)        # самый «дешёвый» короб
+        ).group_by(LogisticTariff.warehouse_id)
+    )
+    # ──────────────────────────────────────────────────────────────────────────────
+
     for token_id, sales_list in grouped_by_token.items():
         # Ищем пользователей, у кого user.token_id == token_id
         users = session.query(User).filter_by(
@@ -350,7 +349,7 @@ async def notify_new_sales(bot: Bot, sales_data: list[dict]):
             total_stocks = get_total_stock(nm_id)
             avg_daily_usage = get_average_daily_sales(nm_id, days=90)  # например, 90 дней
             days_coverage = total_stocks / avg_daily_usage if avg_daily_usage > 0 else 0
-            delivery_rub = get_latest_delivery_cost(nm_id, warehouse_name)
+            delivery_rub = tariffs_by_wh.get(warehouse_name)
 
             rating = sale.get("rating", "N/A")
             reviews = sale.get("reviews", "N/A")
@@ -423,6 +422,17 @@ async def notify_cancellations(bot: Bot, orders_data: list[dict]):
         grouped_orders[tid].append(order)
 
     session = SessionLocal()
+
+    # ────────────────────── 1. кешируем тарифы на весь вызов ─────────────────────
+    #   { "СЦ Казань": 47.5, ... }
+    tariffs_by_wh: dict[str, float] = dict(
+        session.query(
+            LogisticTariff.warehouse_id,
+            func.min(LogisticTariff.tariff_rub)        # самый «дешёвый» короб
+        ).group_by(LogisticTariff.warehouse_id)
+    )
+    # ──────────────────────────────────────────────────────────────────────────────
+
     for token_id, cancels_list in grouped_orders.items():
         # Можно в БД завести отдельный флаг notify_cancels, или использовать notify_orders.
         # Допустим, используем тот же notify_orders=True.
@@ -448,7 +458,7 @@ async def notify_cancellations(bot: Bot, orders_data: list[dict]):
             warehouse_name = order.get("warehouseName", "N/A")
             region_name = order.get("regionName", "N/A")
 
-            delivery_rub = get_latest_delivery_cost(nm_id, warehouse_name)
+            delivery_rub = tariffs_by_wh.get(warehouse_name)
             # Если хотим считать "количество отказов за сегодня" — нужна отдельная функция:
             today_count = count_today_cancels_by_nmId(nm_id)  # Дописать при желании
             cancels_last_3_months = get_cancels_last_3_months(nm_id)  # тоже доп. функция
@@ -692,9 +702,13 @@ async def notify_free_acceptance(bot: Bot, new_coeffs: list[dict]):
                 if media_record and media_record.resize_img:
                     # Отправляем фотографию с подписью
                     try:
+                        photo_file = BufferedInputFile(               # ← оборачиваем bytes
+                            media_record.resize_img,
+                            filename="free_acceptance.png"           # произвольное имя
+                        )
                         await bot.send_photo(
                             chat_id=user_obj.telegram_id,
-                            photo=media_record.resize_img,
+                            photo=photo_file,
                             caption=msg_text,
                             parse_mode="HTML"
                         )

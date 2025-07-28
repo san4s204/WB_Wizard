@@ -1,8 +1,6 @@
 from aiogram import types, Dispatcher
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-import datetime
-
 from utils.logger import logger
 from db.database import SessionLocal
 from db.models import User

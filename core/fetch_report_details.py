@@ -36,26 +36,15 @@ async def save_report_details():
         count_skipped_this_token = 0
 
         for entry in report_data:
-            subject_name = (entry.get("subject_name") or "").strip()
-            if not subject_name:
-                count_skipped_this_token += 1
-                continue
 
             # Создаём объект ReportDetails, включая token_id
             report_detail = ReportDetails(
                 create_dt=entry["create_dt"],
-                subject_name=subject_name,
                 nm_id=entry["nm_id"],
-                brand_name=entry["brand_name"],
-                quantity=entry["quantity"],
-                retail_price=entry["retail_price"],
-                retail_amount=entry["retail_amount"],
                 office_name=entry["office_name"],
                 order_dt=entry["order_dt"],
-                delivery_amount=entry["delivery_amount"],
-                return_amount=entry["return_amount"],
-                delivery_rub=entry["delivery_rub"],
                 commission_percent=entry["commission_percent"],
+                report_type=entry["report_type"]
             )
             session.add(report_detail)
             count_inserted_this_token += 1

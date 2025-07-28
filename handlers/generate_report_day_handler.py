@@ -7,10 +7,10 @@ from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.styles import PatternFill, Alignment, Border, Side
 from openpyxl.drawing.image import Image as ExcelImage
 from openpyxl.utils import get_column_letter
-
 from PIL import Image as PILImage
 from db.database import SessionLocal
-from db.models import Order, Sale, Stock, Product, User
+from db.models import Order, Sale, Stock, Product
+from states.user_state import user_states
 
 async def generate_excel_report_for_date(token_id: int, day_str: str) -> bytes:
     """
@@ -292,40 +292,15 @@ async def generate_excel_report_for_date(token_id: int, day_str: str) -> bytes:
     output.seek(0)
     return output.getvalue()
 
+
 async def cmd_report_for_day(message: types.Message):
-    args = message.text.split(maxsplit=1)
-    if len(args) < 2:
-        await message.answer("Формат: /report_for_day YYYY-MM-DD\nНапример: /report_for_day 2025-03-25")
-        return
-    
-    day_str = args[1].strip()
-
-    # Нужно взять token_id для этого пользователя
-    session = SessionLocal()
-    db_user = session.query(User).filter_by(telegram_id=str(message.from_user.id)).first()
-    if not db_user or not db_user.token_id:
-        session.close()
-        await message.answer("Нет привязанного токена!")
-        return
-
-    token_id = db_user.token_id
-    session.close()
-
-    try:
-        excel_bytes = await generate_excel_report_for_date(token_id, day_str)
-    except ValueError as e:
-        await message.answer(f"Ошибка: {e}")
-        return
-
-    file_size = len(excel_bytes)
-    if file_size > 50_000_000:
-        await message.answer("Файл слишком большой для отправки через Telegram!")
-        return
-
-    await message.answer_document(
-        document=types.BufferedInputFile(excel_bytes, filename=f"report_{day_str}.xlsx"),
-        caption=f"Отчёт за {day_str}"
+    user_id = message.from_user.id
+    user_states[user_id] = {"state": "await_report_date"}
+    await message.answer(
+        "Введите дату для формирования отчёта в формате <b>YYYY-MM-DD</b>.\n"
+        "Например: <code>2025-03-25</code>\n\n"
+        "❌ Чтобы отменить ввод — введите /cancel",
+        parse_mode="HTML"
     )
-
 def register_repots_for_day_handler(dp: Dispatcher):
     dp.message.register(cmd_report_for_day, Command("report_for_day"))
