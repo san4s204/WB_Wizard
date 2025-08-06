@@ -978,67 +978,96 @@ async def generate_daily_excel_report(token_id: int) -> bytes:
     # 4) Товары с нулевыми остатками (Stock, quantity = 0).
     #    Или, если нужно: те товары, которых вообще нет на складах
     #    (т.е. отсутствуют записи в Stock). Здесь вариант с quantity=0.
-    ws_out_of_stock = wb.create_sheet(title="Отсутствие товаров")
-    zero_stocks = (
-        session.query(Stock)
-        .filter(
-            Stock.token_id == token_id,
-            Stock.quantity == 0
+    REPORT_DAYS = 30                     # ← за какой период анализируем продажи
+
+    ws_ship = wb.create_sheet(title="Рекомендации по отгрузке")
+    ws_ship.append([
+        "", "Артикул", "Товар", "Склад",
+        f"Продано за {REPORT_DAYS} дн",
+        "Текущий остаток", "Реком. запас", "Нужно отгрузить"
+    ])
+
+    header_fill = PatternFill("solid", fgColor="FF92D050")
+    for c in ws_ship[1]:
+        c.fill = header_fill
+        c.alignment = Alignment(horizontal="center", vertical="center")
+
+    row_idx = 2
+    period_start = now - datetime.timedelta(days=REPORT_DAYS)
+
+    # --- берём уникальные товары, у которых вообще есть остатки/продажи ---
+    nm_ids = {s.nm_id for s in session.query(Stock).filter(Stock.token_id == token_id)}
+    for nm_id in nm_ids:
+
+        # 1. продаваемость по складам
+        sales_rows = (
+            session.query(
+                Order.warehouse_name,
+                func.count(Order.id).label("sales_cnt")
+            )
+            .filter(
+                Order.token_id == token_id,
+                Order.nm_id == nm_id,
+                Order.is_cancel.is_(False),
+                Order.date >= period_start,
+                Order.date <= now
+            )
+            .group_by(Order.warehouse_name)
+            .all()
         )
-        .all()
-    )
-    ws_out_of_stock.append(["", "Артикул", "Склад", "Остаток", "Дата обновления"])
+        if not sales_rows:
+            continue
 
-    # окрашиваем заголовки
-    for cell in ws_out_of_stock[1]:
-        cell.fill = PatternFill(start_color="FFED7D31", end_color="FFED7D31", fill_type="solid")
+        # 2. текущие остатки
+        stock_map = {
+            st.warehouseName: st.quantity
+            for st in session.query(Stock)
+            .filter(Stock.token_id == token_id, Stock.nm_id == nm_id)
+        }
 
-    for z in zero_stocks:
-        nm_id = z.nm_id or ""
-        warehouse_val = z.warehouseName or ""
-        quantity_val = z.quantity or 0
-        date_val = z.last_change_date.strftime("%Y-%m-%d %H:%M:%S") if z.last_change_date else ""
+        total_stock     = sum(stock_map.values())
+        reserve_stock   = int(total_stock * 0.10)
+        warehouses_cnt  = len(sales_rows)
 
-        # Пишем: (B, C, D, E, F, G) => (date_val, srid, product_name, price, warehouse, region)
-        ws_out_of_stock.cell(row=row_index, column=2, value=nm_id)         # B
-        ws_out_of_stock.cell(row=row_index, column=3, value=warehouse_val) # C
-        ws_out_of_stock.cell(row=row_index, column=4, value=quantity_val)  # D
-        ws_out_of_stock.cell(row=row_index, column=5, value=date_val)      # E
+        # 3. карточка товара (для названия/картинки)
+        prod = session.query(Product).filter_by(nm_id=nm_id, token_id=token_id).first()
+        prod_name = prod.subject_name if prod else ""
 
-        # Достаём product для вставки картинки (если есть)
-        product = session.query(Product).filter_by(nm_id=z.nm_id, token_id=token_id).first()
-        if product and product.resize_img:
-            try:
-                # Открываем как PIL image
-                img_data = io.BytesIO(product.resize_img)
-                pil_img = PILImage.open(img_data)
-                # Приводим к 80×80
-                pil_img = pil_img.resize((80, 80), PILImage.Resampling.LANCZOS)
+        for wh, sold_cnt in sales_rows:
+            # пропускаем Sorting Center
+            if "сц" in wh.lower() or "sc" in wh.lower():
+                continue
 
-                # Превращаем обратно в BytesIO
-                new_img_bytes = io.BytesIO()
-                pil_img = pil_img.convert("RGB")
-                pil_img.save(new_img_bytes, format="JPEG", optimize=True, quality=70)
-                new_img_bytes.seek(0)
+            cur_stock   = stock_map.get(wh, 0)
+            recom_stock = sold_cnt + reserve_stock // warehouses_cnt
+            need_ship   = max(recom_stock - cur_stock, 0)
 
-                # Создаём объект рисунка для openpyxl
-                excel_img = ExcelImage(new_img_bytes)
-                # Добавляем на лист, в ячейку A{row_index}
-                cell_position = f"A{row_index}"
-                ws_out_of_stock.add_image(excel_img, cell_position)
+            if need_ship == 0:                       # ничего довозить не надо
+                continue
 
-                # Поднимем высоту строки
-                # 60 points ~ 80 px, можно ещё увеличить
-                ws_out_of_stock.row_dimensions[row_index].height = 60
+            # --- пишем строку ---
+            ws_ship.cell(row=row_idx, column=2, value=nm_id)          # B
+            ws_ship.cell(row=row_idx, column=3, value=prod_name)      # C
+            ws_ship.cell(row=row_idx, column=4, value=wh)             # D
+            ws_ship.cell(row=row_idx, column=5, value=sold_cnt)       # E
+            ws_ship.cell(row=row_idx, column=6, value=cur_stock)      # F
+            ws_ship.cell(row=row_idx, column=7, value=recom_stock)    # G
+            ws_ship.cell(row=row_idx, column=8, value=need_ship)      # H
 
-            except Exception as exc:
-                print(f"Не удалось вставить картинку nm_id={o.nm_id}: {exc}")
+            # картинка в A-колонку, если есть
+            if prod and prod.resize_img:
+                try:
+                    img = PILImage.open(io.BytesIO(prod.resize_img)).resize((80, 80))
+                    buf = io.BytesIO(); img.save(buf, "PNG"); buf.seek(0)
+                    ws_ship.add_image(ExcelImage(buf), f"A{row_idx}")
+                    ws_ship.row_dimensions[row_idx].height = 60
+                except Exception:
+                    pass
 
-        row_index += 1
+            row_idx += 1
 
-    for col in range(1, 6):
-        col_letter = get_column_letter(col)
-        ws_out_of_stock.column_dimensions[col_letter].width = 15
+    for col in range(1, 9):
+        ws_ship.column_dimensions[get_column_letter(col)].width = 18
 
     # Границы для всех листов
     thin_border = Border(
@@ -1061,7 +1090,7 @@ async def generate_daily_excel_report(token_id: int) -> bytes:
 
 
     # Применяем стили ко всем листам
-    for sheet in [ws_orders, ws_sales, ws_cancels, ws_out_of_stock]:
+    for sheet in [ws_orders, ws_sales, ws_cancels, ws_ship]:
         apply_styles_to_worksheet(sheet)
 
     session.close()

@@ -57,6 +57,7 @@ async def check_new_orders() -> list[dict]:
 
             existing_order = session.query(Order).filter_by(srid=srid, token_id=token_obj.id).first()
 
+            nm_id = data.get("nmId")
             subject = data.get("subject", "")
             supplier_art = data.get("supplierArticle", "")
             tech_size = data.get("techSize", "")
