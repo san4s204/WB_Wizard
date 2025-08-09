@@ -3,7 +3,7 @@ from db.database import SessionLocal
 from aiogram import types, Dispatcher
 from aiogram.filters import Command
 
-ADMINS = {767173302, 987654321}  # user_id админов
+ADMINS = {767173302, 5686777649}  # user_id админов
 async def cmd_stats(message: types.Message):
     user_id = message.from_user.id
     if user_id not in ADMINS:
