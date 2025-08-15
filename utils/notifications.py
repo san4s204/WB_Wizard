@@ -738,7 +738,7 @@ async def generate_daily_excel_report(token_id: int) -> bytes:
       1) Заказы
       2) Выкупы
       3) Отказы
-      4) Товары с нулевыми остатками
+      4) Рекомендация по отгрузке товара
     """
 
     session = SessionLocal()
@@ -750,7 +750,7 @@ async def generate_daily_excel_report(token_id: int) -> bytes:
     # Подготовим Workbook
     wb = Workbook()
     ws_orders: Worksheet = wb.active
-    ws_orders.title = "Orders"
+    ws_orders.title = "Заказы"
 
     # 1) Лист с заказами (Order), у которых date >= date_from
     #    и привязан к нужному token_id
@@ -1069,6 +1069,10 @@ async def generate_daily_excel_report(token_id: int) -> bytes:
     for col in range(1, 9):
         ws_ship.column_dimensions[get_column_letter(col)].width = 18
 
+
+    wb._sheets = [ws_ship, ws_orders, ws_sales, ws_cancels]  # жёстко задаём порядок
+    wb.active = 0
+
     # Границы для всех листов
     thin_border = Border(
         left=Side(border_style='thin', color='FF000000'),
@@ -1141,58 +1145,81 @@ async def send_daily_reports_to_all_users(bot: Bot):
 
 async def notify_subscription_expiring(bot: Bot):
     """
-    Ищет токены, у которых subscription_until < now + WARNING_DAYS_LEFT,
-    отправляет уведомление всем связанным пользователям.
+    1) Предупреждает за WARNING_DAYS_LEFT до окончания подписки.
+    2) По факту истечения – переводит роль токена на 'free', сбрасывает subscription_until
+       и уведомляет всех пользователей, привязанных к токену.
     """
     WARNING_DAYS_LEFT = 3
 
     session = SessionLocal()
+    try:
+        now_utc = datetime.datetime.utcnow()
+        warn_deadline = now_utc + timedelta(days=WARNING_DAYS_LEFT)
 
-    now_utc = datetime.datetime.utcnow()
-    warn_deadline = now_utc + timedelta(days=WARNING_DAYS_LEFT)
-
-    # Ищем все токены, у которых подписка не истекла, но закончится в ближайшие WARNING_DAYS_LEFT
-    # Не берем токены, у которых subscription_until=None или дата в прошлом (уже истекла)
-    tokens_expiring = (
-        session.query(Token)
-        .filter(Token.subscription_until != None)            # есть дата
-        .filter(Token.subscription_until > now_utc)         # ещё не истекла
-        .filter(Token.subscription_until <= warn_deadline)  # но закончится в ближайшее время
-        .all()
-    )
-
-    if not tokens_expiring:
-        session.close()
-        return  # ничего не делаем
-
-    for token_obj in tokens_expiring:
-        # Считаем, сколько осталось дней
-        days_left = (token_obj.subscription_until - now_utc).days
-        if days_left < 0:
-            # уже истекло, пропускаем
-            continue
-
-        # Ищем всех пользователей, кто использует этот token
-        users = session.query(User).filter_by(token_id=token_obj.id).all()
-        if not users:
-            continue
-
-        # Формируем текст уведомления
-        role_str = token_obj.role or "free"
-        # Например:
-        text = (
-            f"Ваша подписка (<b>{role_str}</b>) истекает через <b>{days_left} дн.</b>\n"
-            f"Дата окончания: {token_obj.subscription_until.strftime('%Y-%m-%d %H:%M:%S')}\n"
-            "Чтобы продлить подписку, воспользуйтесь разделом оплаты."
+        # --- (A) Предупреждение о скором окончании ---
+        tokens_expiring = (
+            session.query(Token)
+            .filter(Token.subscription_until.isnot(None))     # есть дата
+            .filter(Token.subscription_until > now_utc)       # ещё не истекла
+            .filter(Token.subscription_until <= warn_deadline)
+            .all()
         )
 
-        # Рассылаем всем пользователям
-        for user in users:
-            chat_id = user.telegram_id
-            if chat_id:
-                try:
-                    await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
-                except Exception as e:
-                    print(f"Ошибка при отправке уведомления пользователю {chat_id}: {e}")
+        for token_obj in tokens_expiring:
+            days_left = (token_obj.subscription_until - now_utc).days
+            if days_left < 0:
+                continue
 
-    session.close()
+            users = session.query(User).filter_by(token_id=token_obj.id).all()
+            if not users:
+                continue
+
+            role_str = token_obj.role or "free"
+            text = (
+                f"⏳ Подписка <b>{role_str}</b> истекает через <b>{days_left} дн.</b>\n"
+                f"Дата окончания: <b>{token_obj.subscription_until.strftime('%Y-%m-%d %H:%M:%S')}</b>\n\n"
+                f"Продлите доступ в разделе <b>/tariffs</b>."
+            )
+            for user in users:
+                if user.telegram_id:
+                    try:
+                        await bot.send_message(chat_id=user.telegram_id, text=text, parse_mode="HTML")
+                    except Exception as e:
+                        print(f"Warn send failed to {user.telegram_id}: {e}")
+
+        # --- (B) Истекшие подписки → переводим на free и уведомляем ---
+        tokens_expired = (
+            session.query(Token)
+            .filter(Token.subscription_until.isnot(None))     # была дата
+            .filter(Token.subscription_until <= now_utc)      # уже истекла
+            .filter(Token.role != "free")                     # ещё не переведён
+            .all()
+        )
+
+        for token_obj in tokens_expired:
+            old_role = token_obj.role or "free"
+            ended_at = token_obj.subscription_until
+
+            # Переводим на free и сбрасываем дату, чтобы не слать повторно
+            token_obj.role = "free"
+            token_obj.subscription_until = None
+
+            users = session.query(User).filter_by(token_id=token_obj.id).all()
+            session.commit()  # фиксируем изменение роли/даты
+
+            if users:
+                text = (
+                    f"❗ Подписка <b>{old_role}</b> истекла "
+                    f"(<b>{ended_at.strftime('%Y-%m-%d %H:%M:%S')}</b> UTC).\n"
+                    f"Доступ переключён на <b>Free</b>.\n\n"
+                    f"Чтобы восстановить расширенный функционал — выберите тариф в <b>/tariffs</b>."
+                )
+                for user in users:
+                    if user.telegram_id:
+                        try:
+                            await bot.send_message(chat_id=user.telegram_id, text=text, parse_mode="HTML")
+                        except Exception as e:
+                            print(f"Expire send failed to {user.telegram_id}: {e}")
+
+    finally:
+        session.close()

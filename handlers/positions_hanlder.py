@@ -10,54 +10,60 @@ from PIL import Image as PILImage
 from db.models import DestCity, ProductPositions, Product, User
 from aiogram import types, Dispatcher
 from sqlalchemy import func
+from core.sub import user_has_role
 from db.database import SessionLocal
 from collections import defaultdict
 
 async def cmd_positions(message: types.Message, user_id: int = None):
-
     session = SessionLocal()
 
-    if user_id is None:
-        user_id = message.from_user.id
+    try:
+        if user_id is None:
+            user_id = message.from_user.id
 
-    db_user = session.query(User).filter_by(telegram_id=str(user_id)).first()
-    if not db_user or not db_user.token_id:
-        await message.answer("Нет привязанного токена. Сначала /start и пришлите токен.")
+        # 1) Проверяем, что у пользователя есть токен
+        db_user = session.query(User).filter_by(telegram_id=str(user_id)).first()
+        if not db_user or not db_user.token_id:
+            await message.answer("Нет привязанного токена. Сначала отправьте /start и пришлите токен.")
+            return
+
+        token_id = db_user.token_id
+
+        # 2) Проверяем роль
+        allowed_roles = ["advanced", "test", "super"]
+        if not user_has_role(session, str(user_id), allowed_roles):
+            await message.answer(
+                "⛔ Доступ к отчёту по позициям доступен в тарифах: <b>Advanced</b>, <b>Test</b> или <b>Super</b>.\n"
+                "Оформить подписку можно в разделе <b>/tariffs</b>.",
+                parse_mode="HTML"
+            )
+            return
+
+        # 3) Готовим Excel
+        wb = Workbook()
+        # Удаляем дефолтный лист "Sheet"
+        wb.remove(wb.active)
+
+        # Основной лист с позициями
+        generate_positions_report(session, wb, token_id)
+        # Листы c динамикой по городам
+        generate_dynamic_positions_report(session, wb, token_id)
+
+        # 4) Отправляем файл
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        workbook_bytes = output.getvalue()
+
+        if len(workbook_bytes) > 50 * 1024 * 1024:
+            await message.answer("Слишком большой Excel для отправки!")
+            return
+
+        doc = BufferedInputFile(workbook_bytes, filename="positions_report.xlsx")
+        await message.answer_document(document=doc, caption="Отчёт по позициям")
+
+    finally:
         session.close()
-        return
-
-    
-
-    token_id = db_user.token_id
-
-    # Создаём Workbook
-    wb = Workbook()
-
-    # Удаляем дефолтный лист "Sheet"
-    default_sheet = wb.active
-    wb.remove(default_sheet)
-
-    # Генерируем отчёт
-    generate_positions_report(session, wb, token_id)
-    
-    # Генерирем листы с динамикой позиций по городам
-    generate_dynamic_positions_report(session, wb, token_id)
-
-    session.close()
-
-    # Сохраняем в BytesIO
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-    workbook_bytes = output.getvalue()
-
-    file_size = len(workbook_bytes)
-    if file_size > 50 * 1024 * 1024:  # 50 MB
-        await message.answer("Слишком большой Excel для отправки!")
-        return
-
-    doc = BufferedInputFile(workbook_bytes, filename="positions_report.xlsx")
-    await message.answer_document(document=doc, caption="Отчёт позиций")
 
 def get_default_period(session) -> tuple:
     """

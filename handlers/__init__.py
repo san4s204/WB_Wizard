@@ -13,6 +13,7 @@ from .stats_handler import register_stats_handler
 from .generate_report_day_handler import register_repots_for_day_handler
 from .features_handler import register_features_handler
 from .user_state import register_common_text_handler
+from .daily_handler import register_daily_report_handler
 # ... и т.д.
 
 def register_all_handlers(dp):
@@ -20,6 +21,7 @@ def register_all_handlers(dp):
     register_stats_handler(dp)
     register_help_handler(dp)
     register_orders_handler(dp)
+    register_daily_report_handler(dp)
     register_report_handler(dp)
     register_repots_for_day_handler(dp)
     register_token_handler(dp)
@@ -32,3 +34,4 @@ def register_all_handlers(dp):
     register_find_position_handlers(dp)
     # регистрируем все остальные
     register_common_text_handler(dp)
+   
