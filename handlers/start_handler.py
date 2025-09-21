@@ -1,12 +1,12 @@
-import datetime
 from aiogram import types, Dispatcher
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import CallbackQuery
 from db.database import SessionLocal
 from db.models import User, Token
 from states.token_state import TokenState
+from core.payments import refresh_payment_and_activate
 
 SAFETY_TEXT = (
     "<b>🔒 Безопасность</b>\n\n"
@@ -31,6 +31,44 @@ async def cmd_start(message: types.Message, state: FSMContext):
     Проверяем, есть ли у пользователя привязанный WB-токен (через token_id).
     Если нет, просим отправить.
     """
+
+    # ---- БЛОК deep-link: /start paid_123 ----
+    txt = message.text or ""
+    # ожидаем формат "/start paid_123" или "/start paid"
+    arg = ""
+    parts = txt.split(maxsplit=1)
+    if len(parts) > 1:
+        arg = parts[1].strip()
+
+    if arg.startswith("paid"):
+        payment_db_id = None
+        if "_" in arg:
+            tail = arg.split("_", 1)[1]
+            if tail.isdigit():
+                payment_db_id = int(tail)
+
+        res = refresh_payment_and_activate(payment_db_id=payment_db_id)
+        status = res.get("status")
+        if status == "succeeded":
+            until = res.get("token_until")
+            role = res.get("role")
+            await message.answer(
+                "✅ Оплата подтверждена!\n"
+                f"Тариф: <b>{role}</b>\n"
+                f"Действует до: <code>{until}</code>\n\n"
+                "Команды: /help /tariffs",
+                parse_mode="HTML"
+            )
+            return
+        elif status == "canceled":
+            await message.answer("🚫 Оплата отменена. Попробуйте снова: /tariffs")
+            return
+        else:
+            # платеж ещё в обработке — отправим пользователя к кнопке «Проверить оплату»
+            await message.answer("Платёж ещё обрабатывается. Вернись к сообщению с кнопкой «Проверить оплату» или открой /tariffs.")
+            return
+    # ---- конец блока deep-link ----    
+
     session = SessionLocal()
 
     # Ищем пользователя по telegram_id

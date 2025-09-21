@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, LargeBinary, Text, BigInteger, ForeignKey, LargeBinary, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, LargeBinary, Text, BigInteger, ForeignKey, LargeBinary, UniqueConstraint, Numeric
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -59,6 +59,40 @@ class Token(Base):
     subscription_until = Column(DateTime, nullable=True)  # До какого момента действует подписка
     role = Column(String(50), default="free")            # free, premium, enterprise и т.д.
     is_active = Column(Boolean, default=True, index=True)   # ← новый столбец
+
+    # --- автоплатежи ---
+    autopay_enabled = Column(Boolean, default=False, index=True)          # вкл/выкл у пользователя
+    yk_payment_method_id = Column(String(128), nullable=True, index=True) # id сохранённого способа оплаты
+    autopay_merchant_customer_id = Column(String(64), nullable=True)      # твой ID клиента (telegram_id, user.id и т.п.)
+    autopay_last_charge_at = Column(DateTime, nullable=True)
+    autopay_next_charge_at = Column(DateTime, nullable=True)
+    autopay_fail_count = Column(Integer, default=0)
+
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
+
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    token_id = Column(Integer, ForeignKey("tokens.id"), nullable=True)
+
+    tariff = Column(String(32), nullable=False)            # 'base' | 'advanced'
+    amount = Column(Numeric(10, 2), nullable=False)        # 349.00
+    currency = Column(String(3), default="RUB", nullable=False)
+
+    yk_payment_id = Column(String(128), index=True, nullable=False)  # id платежа в ЮKassa
+    status = Column(String(32), default="pending", nullable=False)   # pending | succeeded | canceled
+    description = Column(Text, nullable=True)                        # для логов/диагностики
+
+    # --- автоплатежи/реккаринг ---
+    is_recurring = Column(Boolean, default=False, nullable=False)    # True для автосписаний
+    yk_payment_method_id = Column(String(128), nullable=True)        # каким методом списали
+    parent_payment_id = Column(Integer, ForeignKey("payments.id"), nullable=True)
+
+    user = relationship("User", backref="payments")
+    token = relationship("Token", backref="payments")
 
 class Order(Base):
     __tablename__ = "orders"

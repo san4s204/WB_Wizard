@@ -3,7 +3,7 @@ from aiogram import types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from db.database import SessionLocal
 from aiogram.filters import Command
-from db.models import User
+from db.models import User, Token
 from handlers.free_accept_handler import callback_track_free_accept_menu, callback_track_free_accept_prev, callback_track_free_accept_next, callback_add_wh, callback_del_wh, callback_track_free_accept_coef, callback_add_box, callback_del_box, callback_track_free_accept_box, callback_track_free_accept_coef
 
 from aiogram import Dispatcher
@@ -20,6 +20,7 @@ async def cmd_settings_command(message: types.Message):
     kb = InlineKeyboardBuilder()
     kb.button(text="Оповещения🔔", callback_data="notif_menu")
     kb.button(text="Позиции🛍", callback_data="pos_menu")
+    kb.button(text="Автоплатёж 💳", callback_data="autopay_menu")
     kb.button(text="Трекинг бесплатной приёмки 🆓🚚", callback_data="track_free_accept_menu")
     kb.button(text="Назад 🔙", callback_data="cabinet")
     kb.adjust(1)
@@ -32,7 +33,8 @@ async def cmd_settings_command(message: types.Message):
 async def callback_settings(query: types.CallbackQuery):
     kb = InlineKeyboardBuilder()
     kb.button(text="Оповещения🔔", callback_data="notif_menu")
-    # kb.button(text="Позиции🛍", callback_data="pos_menu")
+    kb.button(text="Позиции🛍", callback_data="pos_menu")
+    kb.button(text="Автоплатёж 💳", callback_data="autopay_menu")
     kb.button(text="Трекинг бесплатной приёмки 🆓🚚", callback_data="track_free_accept_menu")
     kb.button(text="⬅️Назад", callback_data="cabinet")  # или "cabinet"
     kb.adjust(1)
@@ -133,6 +135,51 @@ async def callback_pos_menu(query: types.CallbackQuery):
     )
     await query.answer()
 
+async def callback_autopay_menu(query: types.CallbackQuery):
+    session = SessionLocal()
+    user = session.query(User).filter_by(telegram_id=str(query.from_user.id)).first()
+    token = session.query(Token).get(getattr(user, "token_id", None)) if user else None
+    session.close()
+
+    if not token:
+        await query.message.edit_text("Сначала привяжите токен WB в /start.")
+        return
+
+    status = "✅ Включён" if token.autopay_enabled else "❌ Выключен"
+    has_pm = bool(token.yk_payment_method_id)
+    tip = "Способ оплаты сохранён ✅" if has_pm else "Способ оплаты не сохранён ❌ (оформите оплату через /tariffs)"
+    kb = InlineKeyboardBuilder()
+    if has_pm:
+        kb.button(text=("Отключить автоплатёж" if token.autopay_enabled else "Включить автоплатёж"),
+                  callback_data="toggle_autopay")
+    kb.button(text="⬅️Назад", callback_data="settings")
+    kb.adjust(1)
+    await query.message.edit_text(
+        f"🔁 Автоплатёж: {status}\n{tip}\n\n"
+        "Автоплатёж ежемесячно продлевает подписку выбранного тарифа.\n"
+        "Отключить/включить можно здесь либо через /settings → Автоплатёж.",
+        reply_markup=kb.as_markup()
+    )
+    await query.answer()
+
+async def callback_toggle_autopay(query: types.CallbackQuery):
+    session = SessionLocal()
+    user = session.query(User).filter_by(telegram_id=str(query.from_user.id)).first()
+    token = session.query(Token).get(getattr(user, "token_id", None)) if user else None
+    if not token:
+        session.close()
+        await query.answer("Сначала привяжите токен WB в /start", show_alert=True)
+        return
+    if not token.yk_payment_method_id:
+        session.close()
+        await query.answer("Способ оплаты не сохранён. Проведите оплату через /tariffs.", show_alert=True)
+        return
+    token.autopay_enabled = not token.autopay_enabled
+    session.commit()
+    session.close()
+    await query.answer("Изменения сохранены!")
+    await callback_autopay_menu(query)
+
 def register_settings_handlers(dp: Dispatcher):
     dp.callback_query.register(callback_settings, lambda c: c.data == "settings")
     dp.callback_query.register(callback_notif_menu, lambda c: c.data == "notif_menu")
@@ -151,4 +198,6 @@ def register_settings_handlers(dp: Dispatcher):
     dp.callback_query.register(callback_del_box, lambda c: c.data.startswith("del_box_"))
     dp.callback_query.register(callback_add_wh, lambda c: c.data.startswith("add_wh_"))
     dp.callback_query.register(callback_del_wh, lambda c: c.data.startswith("del_wh_"))
+    dp.callback_query.register(callback_autopay_menu, lambda c: c.data == "autopay_menu")
+    dp.callback_query.register(callback_toggle_autopay, lambda c: c.data == "toggle_autopay")
     dp.message.register(cmd_settings_command, Command("settings"))
