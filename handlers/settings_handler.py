@@ -143,23 +143,35 @@ async def callback_autopay_menu(query: types.CallbackQuery):
 
     if not token:
         await query.message.edit_text("Сначала привяжите токен WB в /start.")
+        await query.answer()
         return
 
     status = "✅ Включён" if token.autopay_enabled else "❌ Выключен"
     has_pm = bool(token.yk_payment_method_id)
-    tip = "Способ оплаты сохранён ✅" if has_pm else "Способ оплаты не сохранён ❌ (оформите оплату через /tariffs)"
+
+    text = (
+        "🔁 <b>Автоплатёж</b>\n"
+        f"Статус: {status}\n"
+        f"Способ оплаты: {'✅ сохранён' if has_pm else '❌ не сохранён'}\n\n"
+        "• <b>Отменить подписку</b> — автосписания больше не выполняются, доступ действует до конца оплаченного периода.\n"
+        "• <b>Отвязать карту</b> — удаляем сохранённый способ оплаты из нашей системы.\n\n"
+        "Изменить статус можно здесь или через /settings → Автоплатёж."
+    )
+
     kb = InlineKeyboardBuilder()
     if has_pm:
-        kb.button(text=("Отключить автоплатёж" if token.autopay_enabled else "Включить автоплатёж"),
-                  callback_data="toggle_autopay")
+        kb.button(
+            text=("Отключить автоплатёж" if token.autopay_enabled else "Включить автоплатёж"),
+            callback_data="toggle_autopay"
+        )
+        kb.button(text="Отменить подписку", callback_data="cancel_subscription")
+        kb.button(text="Отвязать карту", callback_data="unlink_card")
+    else:
+        kb.button(text="Сохранить способ (оплатить)", callback_data="tariffs_open")
     kb.button(text="⬅️Назад", callback_data="settings")
     kb.adjust(1)
-    await query.message.edit_text(
-        f"🔁 Автоплатёж: {status}\n{tip}\n\n"
-        "Автоплатёж ежемесячно продлевает подписку выбранного тарифа.\n"
-        "Отключить/включить можно здесь либо через /settings → Автоплатёж.",
-        reply_markup=kb.as_markup()
-    )
+
+    await query.message.edit_text(text, parse_mode="HTML", reply_markup=kb.as_markup())
     await query.answer()
 
 async def callback_toggle_autopay(query: types.CallbackQuery):
@@ -178,6 +190,55 @@ async def callback_toggle_autopay(query: types.CallbackQuery):
     session.commit()
     session.close()
     await query.answer("Изменения сохранены!")
+    await callback_autopay_menu(query)
+
+async def callback_cancel_subscription(query: types.CallbackQuery):
+    # экран подтверждения
+    kb = InlineKeyboardBuilder()
+    kb.button(text="Да, отменить автосписания", callback_data="cancel_subscription_confirm")
+    kb.button(text="⬅️Назад", callback_data="autopay_menu")
+    kb.adjust(1)
+    await query.message.edit_text(
+        "Вы уверены, что хотите <b>отменить подписку</b>? Автосписания будут отключены. "
+        "Доступ сохранится до конца оплаченного периода.",
+        parse_mode="HTML",
+        reply_markup=kb.as_markup()
+    )
+    await query.answer()
+
+async def callback_cancel_subscription_confirm(query: types.CallbackQuery):
+    session = SessionLocal()
+    user = session.query(User).filter_by(telegram_id=str(query.from_user.id)).first()
+    token = session.query(Token).get(getattr(user, "token_id", None)) if user else None
+    if token:
+        token.autopay_enabled = False
+        session.commit()
+    session.close()
+    await query.answer("Подписка отменена, автосписания выключены.")
+    await callback_autopay_menu(query)
+
+async def callback_unlink_card(query: types.CallbackQuery):
+    kb = InlineKeyboardBuilder()
+    kb.button(text="Да, отвязать карту", callback_data="unlink_card_confirm")
+    kb.button(text="⬅️Назад", callback_data="autopay_menu")
+    kb.adjust(1)
+    await query.message.edit_text(
+        "Отвязать карту? Мы удалим сохранённый идентификатор способа оплаты.\n"
+        "Автосписания также будут отключены.",
+        reply_markup=kb.as_markup()
+    )
+    await query.answer()
+
+async def callback_unlink_card_confirm(query: types.CallbackQuery):
+    session = SessionLocal()
+    user = session.query(User).filter_by(telegram_id=str(query.from_user.id)).first()
+    token = session.query(Token).get(getattr(user, "token_id", None)) if user else None
+    if token:
+        token.autopay_enabled = False
+        token.yk_payment_method_id = None
+        session.commit()
+    session.close()
+    await query.answer("Карта отвязана, автосписания выключены.")
     await callback_autopay_menu(query)
 
 def register_settings_handlers(dp: Dispatcher):
@@ -200,4 +261,8 @@ def register_settings_handlers(dp: Dispatcher):
     dp.callback_query.register(callback_del_wh, lambda c: c.data.startswith("del_wh_"))
     dp.callback_query.register(callback_autopay_menu, lambda c: c.data == "autopay_menu")
     dp.callback_query.register(callback_toggle_autopay, lambda c: c.data == "toggle_autopay")
+    dp.callback_query.register(callback_cancel_subscription, lambda c: c.data == "cancel_subscription")
+    dp.callback_query.register(callback_cancel_subscription_confirm, lambda c: c.data == "cancel_subscription_confirm")
+    dp.callback_query.register(callback_unlink_card, lambda c: c.data == "unlink_card")
+    dp.callback_query.register(callback_unlink_card_confirm, lambda c: c.data == "unlink_card_confirm")
     dp.message.register(cmd_settings_command, Command("settings"))
