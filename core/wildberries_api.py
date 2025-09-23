@@ -5,6 +5,7 @@ import datetime
 from typing import List, Dict, Any
 import traceback
 import json
+import re
 
 BASE_URL = "https://statistics-api.wildberries.ru/api"
 SUPPLIES_BASE_URL = "https://supplies-api.wildberries.ru/api"
@@ -171,28 +172,45 @@ async def get_incomes(date_from: str, user_token: str) -> list[dict]:
         print(f"Ошибка при запросе к Wildberries /incomes: {e}")
         return []
 
-async def get_tariffs_for_date(user_token: str, kind: str = "box",  dt: datetime.date | str | None = None) -> list[dict]:
+def _parse_cost(raw) -> float | None:
     """
-    kind = 'box' | 'pallet'
-    dt   = 'YYYY-MM-DD'  (по‑умолчанию сегодня)
-    Возвращает список словарей:
-      {'warehouseName': 'Маркетплейс',
-       'warehouseId'  : 507 | None,
-       'boxTypeId'    : 2 | 6,
-       'tariff'       : 47.5}
+    Безопасно парсим цену:
+    - пропускаем '-', '—', пустые строки, None
+    - чистим пробелы/неразрывные пробелы, валюты/символы
+    - меняем ',' -> '.'
+    - берём первое число из строки
     """
+    if raw is None:
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
 
-    headers = {
-        "Authorization": user_token
-    }
+    s = str(raw).strip()
+    if s in {"", "-", "—", "N/A", "NaN", "нет", "нет данных"}:
+        return None
+
+    s = s.replace("\u00a0", " ")      # NBSP -> space
+    s = s.replace(" ", "")
+    s = s.replace(",", ".")
+    # вытащим первое валидное число
+    m = re.search(r'[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?', s)
+    if not m:
+        return None
+    try:
+        return float(m.group(0))
+    except Exception:
+        return None
+
+async def get_tariffs_for_date(user_token: str, kind: str = "box",  dt: datetime.date | str | None = None) -> list[dict]:
+    headers = {"Authorization": user_token}
 
     if dt is None:
         dt = datetime.date.today()
     if isinstance(dt, datetime.date):
-        dt = dt.isoformat()                                     # '2025-07-14'
+        dt = dt.isoformat()
 
     url = f"{COMMON_BASE}/{kind}"
-    params = {"date": dt}                                       # 👈 передаём дату
+    params = {"date": dt}
     timeout = aiohttp.ClientTimeout(total=30)
 
     async with aiohttp.ClientSession(timeout=timeout) as s:
@@ -200,27 +218,30 @@ async def get_tariffs_for_date(user_token: str, kind: str = "box",  dt: datetime
             r.raise_for_status()
             full = await r.json()
 
-    # ---------------- разбор под новый формат ----------------
-    wl = full["response"]["data"]["warehouseList"]
+    # аккуратнее достаём список складов
+    data = full.get("response", {}).get("data", {})
+    wl = data.get("warehouseList", []) or []
 
     cleaned: list[dict] = []
     for w in wl:
         if kind == "box":
             raw_cost = w.get("boxDeliveryBase")
             b_type_id, b_type_name = 2, "Короба"
-        else:                      # pallet
+        else:
             raw_cost = w.get("palletDeliveryValueBase")
             b_type_id, b_type_name = 6, "Паллеты"
 
-        if not raw_cost:           # пропустим, если нет тарифа
+        cost = _parse_cost(raw_cost)
+        if cost is None:
+            # можно залогировать, если нужно:
+            # logging.debug(f"skip tariff: kind={kind}, wh={w.get('warehouseName')}, raw={raw_cost!r}")
             continue
 
-        cost = float(raw_cost.replace(",", "."))
         cleaned.append({
             "warehouseName": w.get("warehouseName"),
             "boxTypeId"    : b_type_id,
             "boxTypeName"  : b_type_name,
-            "tariff"       : cost
+            "tariff"       : cost,
         })
     return cleaned
 
