@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, LargeBinary, Text, BigInteger, ForeignKey, LargeBinary, UniqueConstraint, Numeric
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, LargeBinary, Text, BigInteger, ForeignKey, LargeBinary, UniqueConstraint, Numeric, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -59,6 +59,12 @@ class Token(Base):
     subscription_until = Column(DateTime, nullable=True)  # До какого момента действует подписка
     role = Column(String(50), default="free")            # free, premium, enterprise и т.д.
     is_active = Column(Boolean, default=True, index=True)   # ← новый столбец
+    token_expires_at = Column(
+        DateTime,
+        nullable=True,
+        index=True,
+        server_default=text("timezone('utc', now()) + interval '180 days'")
+    )
 
     # --- автоплатежи ---
     autopay_enabled = Column(Boolean, default=False, index=True)          # вкл/выкл у пользователя

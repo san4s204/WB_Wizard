@@ -47,6 +47,11 @@ TARIFFS = {
         "role": "advanced",
         "title": "WB Wizard — Advanced 30d",
     },
+    # 🔥 новые пакеты
+    "base_6m":      {"amount": Decimal("1779.90"), "days": 180, "role": "base",     "title": "WB Wizard — Base 6m (−15%)"},
+    "base_12m":     {"amount": Decimal("3141.00"), "days": 365, "role": "base",     "title": "WB Wizard — Base 12m (−25%)"},
+    "advanced_6m":  {"amount": Decimal("4839.90"), "days": 180, "role": "advanced", "title": "WB Wizard — Advanced 6m (−15%)"},
+    "advanced_12m": {"amount": Decimal("8541.00"), "days": 365, "role": "advanced", "title": "WB Wizard — Advanced 12m (−25%)"},
 }
 
 def _now_utc() -> dt.datetime:

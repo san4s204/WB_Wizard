@@ -14,6 +14,7 @@ from .generate_report_day_handler import register_repots_for_day_handler
 from .features_handler import register_features_handler
 from .user_state import register_common_text_handler
 from .daily_handler import register_daily_report_handler
+from .token_replace_handler import register_token_replace_handlers
 # ... и т.д.
 
 def register_all_handlers(dp):
@@ -32,6 +33,7 @@ def register_all_handlers(dp):
     register_tariffs_handler(dp)
     register_features_handler(dp)
     register_find_position_handlers(dp)
+    register_token_replace_handlers(dp)
     # регистрируем все остальные
     register_common_text_handler(dp)
    

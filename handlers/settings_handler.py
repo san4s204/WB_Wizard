@@ -21,6 +21,7 @@ async def cmd_settings_command(message: types.Message):
     kb.button(text="Оповещения🔔", callback_data="notif_menu")
     kb.button(text="Позиции🛍", callback_data="pos_menu")
     kb.button(text="Автоплатёж 💳", callback_data="autopay_menu")
+    kb.button(text="Заменить токен 🔐", callback_data="replace_token")
     kb.button(text="Трекинг бесплатной приёмки 🆓🚚", callback_data="track_free_accept_menu")
     kb.button(text="Назад 🔙", callback_data="cabinet")
     kb.adjust(1)
@@ -35,6 +36,7 @@ async def callback_settings(query: types.CallbackQuery):
     kb.button(text="Оповещения🔔", callback_data="notif_menu")
     kb.button(text="Позиции🛍", callback_data="pos_menu")
     kb.button(text="Автоплатёж 💳", callback_data="autopay_menu")
+    kb.button(text="Заменить токен 🔐", callback_data="replace_token")
     kb.button(text="Трекинг бесплатной приёмки 🆓🚚", callback_data="track_free_accept_menu")
     kb.button(text="⬅️Назад", callback_data="cabinet")  # или "cabinet"
     kb.adjust(1)

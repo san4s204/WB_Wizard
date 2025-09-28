@@ -6,6 +6,26 @@ from db.database import SessionLocal
 from db.models import User
 from core.wildberries_api import get_seller_info  # функция из пункта 1
 from core.sub import get_user_role  
+import datetime
+
+def token_expiry_line(dt_until: datetime.datetime | None) -> str:
+    """
+    Возвращает готовую строку для кабинета:
+    - "WB-токен: срок не указан"
+    - "WB-токен: истёк"
+    - "WB-токен: истечёт через 12 дн 5 ч (до 31.12.2025 23:59)"
+    """
+    if not dt_until:
+        return "WB-токен: срок не указан"
+
+    now = datetime.datetime.utcnow()
+    if dt_until <= now:
+        return "WB-токен: истёк"
+
+    delta = dt_until - now
+    days = delta.days
+    hours = delta.seconds // 3600
+    return f"WB-токен: истечёт через {days} дн {hours} ч (до {dt_until.strftime('%d.%m.%Y %H:%M')})"
 
 async def cmd_cabinet(message: types.Message, user_id: int = None):
     """
@@ -36,6 +56,7 @@ async def cmd_cabinet(message: types.Message, user_id: int = None):
         await message.answer("У вас не привязан токен. Сначала /start.")
         return
 
+    token_expires_at = getattr(token_obj, "token_expires_at", None)
     user_token_value = token_obj.token_value  # Сам token string
     tariff = get_user_role(session, db_user)  # Возвращает 'free','base','advanced','test','super' и т.д.
     subscription_until = token_obj.subscription_until
@@ -69,7 +90,8 @@ async def cmd_cabinet(message: types.Message, user_id: int = None):
         f"👤 <b>Личный кабинет</b>\n"
         f"Магазин: {store_label}\n"
         f"Тариф: {tariff}\n"
-        f"Доступ до {subscription_until.strftime('%d.%m.%Y %H:%M:%S')}"
+        f"Доступ до {subscription_until.strftime('%d.%m.%Y %H:%M:%S')}\n"
+        f"{token_expiry_line(token_expires_at)}"
     )
 
     # 4. Формируем inline-клавиатуру
