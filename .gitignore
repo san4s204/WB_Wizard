@@ -29,6 +29,8 @@ venv/
 ENV/
 env/
 
+
+
 # Logs & profiling
 *.log
 *.out
@@ -84,3 +86,8 @@ chromedriver-win64/
 *.tar.gz
 *.tgz
 *.7z
+core/__pycache__
+db/__pycache__
+handlers/__pycache__
+utils/__pycache__
+states/__pycache__
